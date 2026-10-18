@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>noob · Reset 顶部提示条方案</title>
+  <style>
+    :root { color-scheme: dark; --page:#101115; --panel:#191b22; --terminal:#0b0d11; --ink:#f7f4f8; --muted:#a5a2ac; --pink:#b00065; --pink-light:#e967aa; --line:#32343d; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1040px; margin:auto; padding:34px 22px 70px; }
+    h1 { margin:0 0 6px; font-size:27px; letter-spacing:-.03em; }
+    .intro { color:var(--muted); margin:0 0 22px; }
+    .toolbar { display:flex; align-items:center; gap:12px; margin-bottom:22px; flex-wrap:wrap; }
+    .toolbar-label { color:var(--muted); font-size:13px; }
+    button { border:1px solid #55505a; border-radius:8px; background:#24212a; color:#e7e3e9; padding:7px 13px; font:inherit; cursor:pointer; }
+    button.active { background:var(--pink); border-color:var(--pink-light); color:white; }
+    .grid { display:grid; gap:20px; }
+    article { background:var(--panel); border:1px solid #32323a; border-radius:14px; padding:20px; }
+    .heading { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:4px; }
+    h2 { font-size:18px; margin:0; }
+    .tag { font-size:12px; color:#f6bddb; border:1px solid #814768; background:#442338; padding:1px 7px; border-radius:999px; }
+    .caption { color:var(--muted); margin:0 0 15px; font-size:13px; }
+    .terminal { width:min(100%, 80ch); overflow:hidden; background:var(--terminal); border:1px solid #3c3d44; border-radius:8px; font:14px/1.5 Menlo,Monaco,Consolas,monospace; box-shadow:0 14px 30px #0005; }
+    body.narrow .terminal { width:min(100%, 52ch); }
+    .banner { color:white; }
+    .sample { padding:12px 16px 15px; color:#c4c3c8; white-space:nowrap; overflow:hidden; }
+    .sample .title { font-weight:bold; color:#f0f0f3; }
+    .sample .rule { color:#61636c; }
+    .sample .section { color:#48c8d6; font-weight:bold; }
+    .sample .bar { color:#75cf94; }
+    .sample .dim { color:#a5a4aa; }
+    .a { background:var(--pink); padding:8px 14px 9px; }
+    .a .a-top { display:flex; justify-content:space-between; gap:12px; font-weight:bold; }
+    .a .a-list { display:flex; gap:13px; margin-top:3px; font-size:12px; white-space:nowrap; }
+    .a .a-item + .a-item { border-left:1px solid #ffffff75; padding-left:13px; }
+    .a .subtle { color:#ffe0ef; font-weight:normal; }
+    .b .b-head { background:var(--pink); display:flex; justify-content:space-between; font-weight:bold; padding:8px 14px; }
+    .b .b-rows { background:#311021; display:grid; grid-template-columns:repeat(3,1fr); }
+    .b .b-item { padding:8px 13px; border-right:1px solid #77415e; }
+    .b .b-item:last-child { border:0; }
+    .b .b-number { display:block; color:#f1a8cc; font-size:11px; }
+    .b .b-time { white-space:nowrap; font-weight:bold; font-size:13px; }
+    .c { background:#5a0c38; }
+    .c .c-main { background:var(--pink); padding:8px 14px; display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+    .c .c-count { font-weight:bold; }
+    .c .c-next { font-weight:bold; }
+    .c .c-rest { padding:7px 14px; color:#f7d9e8; font-size:12px; display:flex; gap:20px; }
+    .d { background:#340f26; padding:9px 14px 11px; }
+    .d .d-head { color:white; font-weight:bold; margin-bottom:5px; }
+    .d .d-row { display:flex; gap:9px; color:#f4e2eb; font-size:13px; }
+    .d .d-mark { color:#f679b8; }
+    .d .d-row:first-of-type .d-mark { color:white; }
+    body.narrow .a .a-top, body.narrow .b .b-head, body.narrow .c .c-main { display:block; }
+    body.narrow .a .a-top span + span, body.narrow .b .b-head span + span, body.narrow .c .c-main span + span { display:block; margin-top:2px; }
+    body.narrow .a .a-list, body.narrow .c .c-rest { flex-direction:column; gap:1px; }
+    body.narrow .a .a-item + .a-item { border:0; padding-left:0; }
+    body.narrow .b .b-rows { grid-template-columns:1fr; }
+    body.narrow .b .b-item { display:flex; gap:12px; align-items:baseline; padding:3px 14px; border-right:0; }
+    body.narrow .b .b-item + .b-item { border-top:1px solid #77415e; }
+    body.narrow .b .b-number { min-width:19px; }
+    body.narrow .c .c-next { display:block; }
+    @media (max-width:600px) { main {padding:24px 12px 40px} article {padding:15px} .terminal {font-size:12px} .a .a-list,.c .c-rest {flex-wrap:wrap; gap:3px 10px} }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>noob / Reset 顶部提示条</h1>
+    <p class="intro">样式预览。示例为 3 次可用机会，日期仅用于排版；每个时间表示对应机会的到期时间。</p>
+    <div class="toolbar" aria-label="预览终端宽度">
+      <span class="toolbar-label">终端宽度</span>
+      <button type="button" class="active" data-width="wide">80 列</button>
+      <button type="button" data-width="narrow">52 列</button>
+    </div>
+    <div class="grid">
+      <article>
+        <div class="heading"><h2>A · 双行紧凑</h2><span class="tag">推荐</span></div>
+        <p class="caption">数量第一眼可见，3 个时间并排，保留原来的粉色整条提示。</p>
+        <div class="terminal">
+          <div class="banner a"><div class="a-top"><span>★ &nbsp;CODEX RESET &nbsp;·&nbsp; 3 AVAILABLE</span><span class="subtle">EXPIRES</span></div><div class="a-list"><span class="a-item">① Oct 10 09:00</span><span class="a-item">② Oct 13 18:30</span><span class="a-item">③ Oct 18 09:00</span></div></div>
+          <div class="sample"><span class="title">noob</span><br><span class="rule">────────────────────────────────────────</span><br><span class="section">RATE LIMITS</span> <span class="dim"> ↑ even pace</span><br>5H &nbsp;<span class="bar">████████████</span> 68% left</div>
+        </div>
+      </article>
+      <article>
+        <div class="heading"><h2>B · 三格票券</h2><span class="tag">区分清楚</span></div>
+        <p class="caption">每次机会占一格；时间之间的归属最明确，窄窗口改为三行。</p>
+        <div class="terminal">
+          <div class="banner b"><div class="b-head"><span>★ &nbsp;CODEX RESET</span><span>3 AVAILABLE</span></div><div class="b-rows"><div class="b-item"><span class="b-number">#1 · EXPIRES</span><span class="b-time">Oct 10 09:00</span></div><div class="b-item"><span class="b-number">#2 · EXPIRES</span><span class="b-time">Oct 13 18:30</span></div><div class="b-item"><span class="b-number">#3 · EXPIRES</span><span class="b-time">Oct 18 09:00</span></div></div></div>
+          <div class="sample"><span class="title">noob</span><br><span class="rule">────────────────────────────────────────</span><br><span class="section">RATE LIMITS</span> <span class="dim"> ↑ even pace</span><br>5H &nbsp;<span class="bar">████████████</span> 68% left</div>
+        </div>
+      </article>
+      <article>
+        <div class="heading"><h2>C · 最近到期优先</h2><span class="tag">突出紧急时间</span></div>
+        <p class="caption">第一条强调最近到期，另两次机会仍在第二行完整显示。</p>
+        <div class="terminal">
+          <div class="banner c"><div class="c-main"><span class="c-count">★ &nbsp;3 RESETS AVAILABLE</span><span class="c-next">NEXT EXPIRES &nbsp;Oct 10 09:00</span></div><div class="c-rest"><span>② Oct 13 18:30</span><span>③ Oct 18 09:00</span></div></div>
+          <div class="sample"><span class="title">noob</span><br><span class="rule">────────────────────────────────────────</span><br><span class="section">RATE LIMITS</span> <span class="dim"> ↑ even pace</span><br>5H &nbsp;<span class="bar">████████████</span> 68% left</div>
+        </div>
+      </article>
+      <article>
+        <div class="heading"><h2>D · 竖向时间线</h2><span class="tag">适合窄窗口</span></div>
+        <p class="caption">按到期先后逐条列出；最易扫描，但会占用更多终端高度。</p>
+        <div class="terminal">
+          <div class="banner d"><div class="d-head">★ &nbsp;CODEX RESET &nbsp;·&nbsp; 3 AVAILABLE</div><div class="d-row"><span class="d-mark">●</span><span>① EXPIRES &nbsp;Oct 10 09:00</span></div><div class="d-row"><span class="d-mark">│</span><span>② EXPIRES &nbsp;Oct 13 18:30</span></div><div class="d-row"><span class="d-mark">○</span><span>③ EXPIRES &nbsp;Oct 18 09:00</span></div></div>
+          <div class="sample"><span class="title">noob</span><br><span class="rule">────────────────────────────────────────</span><br><span class="section">RATE LIMITS</span> <span class="dim"> ↑ even pace</span><br>5H &nbsp;<span class="bar">████████████</span> 68% left</div>
+        </div>
+      </article>
+    </div>
+  </main>
+  <script>
+    document.querySelectorAll('button[data-width]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.body.classList.toggle('narrow', button.dataset.width === 'narrow');
+        document.querySelectorAll('button[data-width]').forEach(item => item.classList.toggle('active', item === button));
+      });
+    });
+  </script>
+</body>
+</html>

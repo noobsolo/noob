@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noob · DeepSeek 拆分（opencode / pi）方案预览</title>
+<style>
+:root { color-scheme:dark; }
+* { box-sizing:border-box; }
+body { margin:0; background:#101115; color:#f6f4f7; font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+main { max-width:1080px; margin:auto; padding:38px 22px 90px; }
+h1 { margin:0 0 5px; font-size:27px; letter-spacing:-.03em; }
+.intro { margin:0 0 8px; color:#adaab3; }
+.sample { margin:0 0 30px; color:#6f6c76; font-size:13.5px; }
+hgroup h2 { font-size:17px; margin:0 0 3px; }
+hgroup p { margin:0 0 14px; color:#adaab3; font-size:14px; }
+section.block { margin:0 0 34px; padding:21px; border:1px solid #34353d; border-radius:14px; background:#191b22; }
+section.block h2 { margin:0 0 4px; font-size:18px; }
+.terminal { background:#0b0d11; border:1px solid #3c3d44; border-radius:8px; overflow:auto; box-shadow:0 15px 30px #0005; margin:0 0 12px; }
+pre { margin:0; padding:14px 16px; font:12.5px/1.55 Menlo,Monaco,Consolas,monospace; color:#c8ccd2; white-space:pre; }
+pre .dim { color:#69727d; }
+pre .mint { color:#5fd3ba; font-weight:bold; }
+pre .blue { color:#7a9bff; font-weight:bold; }
+pre .hl { color:#f6f4f7; }
+.tag { display:inline-block; padding:1px 8px; border-radius:20px; font-size:12px; font-weight:700; margin-right:8px; }
+.tag.rec { background:#234f43; color:#5fd3ba; }
+.tag.alt { background:#34353d; color:#adaab3; }
+.notes { color:#adaab3; font-size:13.5px; margin:6px 0 0; }
+.notes b { color:#f6f4f7; }
+
+/* card mockups */
+.cards { display:flex; flex-wrap:wrap; gap:26px; }
+.cardwrap { flex:0 0 auto; }
+.cardlabel { color:#adaab3; font-size:13px; margin:0 0 8px; }
+.card {
+  width:432px; background:linear-gradient(160deg,#0c1216,#0a0f14 55%,#0b1116);
+  border:1px solid #2a343c; border-radius:20px; padding:24px 26px 22px;
+  box-shadow:0 18px 44px #0007; position:relative; overflow:hidden;
+}
+.card .kicker { font:700 11px/1 Menlo,monospace; letter-spacing:3px; color:#5fd3ba; margin:0 0 4px; }
+.card .bignum { font:800 52px/1 Menlo,monospace; color:#f2f4f6; letter-spacing:-.02em; }
+.card .bignum small { font:700 22px/1 Menlo,monospace; color:#69727d; }
+.card .subline { font:600 12px/1 Menlo,monospace; color:#69727d; margin:6px 0 0; }
+.card .divider { height:2px; background:#2a343c; margin:16px 0 12px; }
+.ptable { font:700 15px/1 Menlo,monospace; }
+.ptable .head, .ptable .row { display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; align-items:baseline; }
+.ptable .head { color:#69727d; font-size:11px; letter-spacing:1.5px; margin-bottom:8px; }
+.ptable .head span:not(:first-child), .ptable .row span:not(:first-child) { text-align:right; }
+.ptable .row { padding:6px 0; }
+.ptable .row .name { color:#c9d0d6; letter-spacing:.5px; }
+.ptable .row .name.sub { color:#5c8aff; padding-left:14px; font-weight:600; }
+.ptable .row .name.sub.pim { color:#7a9bff; }
+.ptable .row .val { color:#c9d0d6; }
+.ptable .row.dimrow .name, .ptable .row.dimrow .val { color:#69727d; font-weight:600; }
+.ptable .row.strong .name { color:#f2f4f6; }
+.ptable .row.strong .val { color:#f2f4f6; }
+.ptable .totalrow { border-top:1px dashed #2a343c; margin-top:4px; padding-top:8px; color:#5fd3ba; }
+.foot { margin-top:14px; padding-top:12px; border-top:2px solid #2a343c; font:600 13px/1.5 Menlo,monospace; color:#69727d; }
+.foot .lbl { letter-spacing:1.5px; font-size:11px; }
+.foot .bal { float:right; color:#5fd3ba; font-weight:800; font-size:14px; }
+.foot .split { margin-top:6px; color:#69727d; }
+.foot .split b { color:#c9d0d6; }
+.foot .split .op { color:#5c8aff; font-weight:700; }
+.foot .split .pim { color:#7a9bff; font-weight:700; }
+.cleardiv { height:8px; }
+</style>
+</head>
+<body>
+<main>
+<h1>noob / DeepSeek 拆分方案预览</h1>
+<p class="intro">首页视图 + 首页卡片：在 COST 行下增加 opencode 与 pi 各自的 cost。细节页（models 视图）和 models 卡片不在本次范围。</p>
+<p class="sample">样本数据（opencode + pi 之和 = 合计）：DeepSeek 合计 today ¥5.35 / week ¥8.98 / month ¥8.98 / all ¥8.98；其中 opencode today ¥3.92 / week ¥7.42 / month ¥7.42 / all ¥7.42，pi today ¥1.43 / week ¥1.56 / month ¥1.56 / all ¥1.56。</p>
+
+<!-- ===================== 首页 UI ===================== -->
+<section class="block">
+<hgroup>
+<h2>一、首页 UI（终端，80 列）</h2>
+<p>现有 DEEPSEEK 块只有 BALANCE + COST 两行。下面 3 个方案都在 COST 行下加 opencode / pi 子行，区别在信息密度。</p>
+</hgroup>
+
+<div class="terminal"><pre>  ╭────────────────────────────────────────────────────────────────────╮
+  │ <span class="blue">● DEEPSEEK</span>                                                        │
+  │   BALANCE   ¥99.80                                                │
+  │   COST      today ¥5.35  ·  week ¥8.98  ·  month ¥8.98  ·  all ¥8.98 │
+  │   <span class="dim">opencode  today ¥3.92  ·  week ¥7.42  ·  month ¥7.42  ·  all ¥7.42</span> │
+  │   <span class="dim">pi        today ¥1.43  ·  week ¥1.56  ·  month ¥1.56  ·  all ¥1.56</span> │
+  ╰────────────────────────────────────────────────────────────────────╯</pre></div>
+<p class="notes"><span class="tag rec">推荐 · 方案 A</span>子行与 COST 同缩进、键名对齐，四周期全显。子行整体用 dim 灰，与 COST 的白色形成主次。改动最小：`summary_lines` 复用即可。</p>
+
+<div class="terminal"><pre>  ╭────────────────────────────────────────────────────────────────────╮
+  │ <span class="blue">● DEEPSEEK</span>                                                        │
+  │   BALANCE   ¥99.80                                                │
+  │   COST      today ¥5.35  ·  week ¥8.98  ·  month ¥8.98  ·  all ¥8.98 │
+  │   <span class="dim">opencode   today ¥3.92  ·  all ¥7.42</span>                                │
+  │   <span class="dim">pi         today ¥1.43  ·  all ¥1.56</span>                                │
+  ╰────────────────────────────────────────────────────────────────────╯</pre></div>
+<p class="notes"><span class="tag alt">方案 B</span>子行只保留 today / all 两列（week/month 可从 COST 行反推）。最紧凑，行更短，适合窄终端也不易折行。</p>
+
+<div class="terminal"><pre>  ╭────────────────────────────────────────────────────────────────────╮
+  │ <span class="blue">● DEEPSEEK</span>                                                        │
+  │   BALANCE   ¥99.80                                                │
+  │   COST      today ¥5.35 (<span class="dim">op ¥3.92 · pi ¥1.43</span>) · week ¥8.98 ·     │
+  │             month ¥8.98 · all ¥8.98                               │
+  ╰────────────────────────────────────────────────────────────────────╯</pre></div>
+<p class="notes"><span class="tag alt">方案 C</span>不增行，只在 today 数值后括号注 op / pi。最省空间，但只有 today 被拆，week/month/all 看不到来源占比，且折行后括号容易跟丢。</p>
+</section>
+
+<!-- ===================== 首页卡片 ===================== -->
+<section class="block">
+<hgroup>
+<h2>二、首页卡片（1080 × 1350，只看平台表 + 底部区域）</h2>
+<p>卡片平台表现在是 CODEX / DEEPSEEK 两行（TODAY / WEEK / MONTH 三列）。下面 3 个方案展示拆分呈现方式。</p>
+</hgroup>
+
+<div class="cards">
+
+<div class="cardwrap">
+<p class="cardlabel">方案 1 · 表格内缩进子行</p>
+<div class="card">
+  <p class="kicker">NOOBSOLO</p>
+  <div class="bignum">$27.78<small>.00</small></div>
+  <div class="subline">LOCAL USAGE · TODAY</div>
+  <div class="divider"></div>
+  <div class="ptable">
+    <div class="head"><span>PLATFORM</span><span>TODAY</span><span>WEEK</span><span>MONTH</span></div>
+    <div class="row strong"><span class="name">CODEX</span><span class="val">$26.98</span><span class="val">$102.92</span><span class="val">$122.14</span></div>
+    <div class="row strong"><span class="name">DEEPSEEK</span><span class="val">¥5.35</span><span class="val">¥8.98</span><span class="val">¥8.98</span></div>
+    <div class="row dimrow"><span class="name sub">opencode</span><span class="val">¥3.92</span><span class="val">¥7.42</span><span class="val">¥7.42</span></div>
+    <div class="row dimrow"><span class="name sub pim">pi</span><span class="val">¥1.43</span><span class="val">¥1.56</span><span class="val">¥1.56</span></div>
+  </div>
+  <div class="foot">
+    <span class="lbl">DEEPSEEK BALANCE</span><span class="bal">¥99.80</span>
+    <div class="cleardiv"></div>
+  </div>
+</div>
+</div>
+
+<div class="cardwrap">
+<p class="cardlabel">方案 2 · 底部单行拆分</p>
+<div class="card">
+  <p class="kicker">NOOBSOLO</p>
+  <div class="bignum">$27.78<small>.00</small></div>
+  <div class="subline">LOCAL USAGE · TODAY</div>
+  <div class="divider"></div>
+  <div class="ptable">
+    <div class="head"><span>PLATFORM</span><span>TODAY</span><span>WEEK</span><span>MONTH</span></div>
+    <div class="row strong"><span class="name">CODEX</span><span class="val">$26.98</span><span class="val">$102.92</span><span class="val">$122.14</span></div>
+    <div class="row strong"><span class="name">DEEPSEEK</span><span class="val">¥5.35</span><span class="val">¥8.98</span><span class="val">¥8.98</span></div>
+  </div>
+  <div class="foot">
+    <span class="lbl">DEEPSEEK BALANCE</span><span class="bal">¥99.80</span>
+    <div class="split"><span class="op">opencode</span> today ¥3.92 · all ¥7.42&nbsp;&nbsp;·&nbsp;&nbsp;<span class="pim">pi</span> today ¥1.43 · all ¥1.56</div>
+  </div>
+</div>
+</div>
+
+<div class="cardwrap">
+<p class="cardlabel">方案 3 · 双行替换（无合计行）</p>
+<div class="card">
+  <p class="kicker">NOOBSOLO</p>
+  <div class="bignum">$27.78<small>.00</small></div>
+  <div class="subline">LOCAL USAGE · TODAY</div>
+  <div class="divider"></div>
+  <div class="ptable">
+    <div class="head"><span>PLATFORM</span><span>TODAY</span><span>WEEK</span><span>MONTH</span></div>
+    <div class="row strong"><span class="name">CODEX</span><span class="val">$26.98</span><span class="val">$102.92</span><span class="val">$122.14</span></div>
+    <div class="row"><span class="name sub">DS · OPENCODE</span><span class="val">¥3.92</span><span class="val">¥7.42</span><span class="val">¥7.42</span></div>
+    <div class="row"><span class="name sub pim">DS · PI</span><span class="val">¥1.43</span><span class="val">¥1.56</span><span class="val">¥1.56</span></div>
+  </div>
+  <div class="foot">
+    <span class="lbl">DEEPSEEK BALANCE</span><span class="bal">¥99.80</span>
+    <div class="cleardiv"></div>
+  </div>
+</div>
+</div>
+
+</div>
+
+<p class="notes" style="margin-top:16px"><b>实现影响</b>：方案 1 最直观，但要把平台表从 3 行扩成 5 行（CODEX + DEEPSEEK 合计 + 2 子行），需要重排卡片 SVG 行高与 footer 上移量；方案 2 只在底部 deepseek balance 区域加一行，改动最小、不动表格；方案 3 去掉了 DEEPSEEK 合计行，合计只能靠 TOTAL 大数字体现。</p>
+</section>
+
+</main>
+</body>
+</html>

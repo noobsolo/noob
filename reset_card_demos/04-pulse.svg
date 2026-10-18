@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350" role="img" aria-label="Reset card demo 4, Pulse">
+<defs>
+  <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse"><rect x="25" y="25" width="4" height="4" fill="#20282e"/></pattern>
+  <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="12"/></filter>
+  <style>text { font-family: Menlo, Monaco, 'Courier New', monospace; }</style>
+</defs>
+<rect x="0" y="0" width="1080" height="1350" rx="0" fill="#0b0d0f"/>
+<rect x="0" y="0" width="1080" height="1350" rx="0" fill="url(#grid)"/>
+<text x="88" y="101" fill="#78edcf" font-size="27" font-weight="800" letter-spacing="2">✱  NOOBSOLO</text>
+<text x="992" y="101" fill="#a2a9b3" font-size="18" font-weight="700" letter-spacing="1" text-anchor="end">RESET CARD / 09 OCT 2026</text>
+<rect x="88" y="170" width="904" height="296" rx="10" fill="#b00065"/>
+<text x="125" y="230" fill="#ffffff" font-size="23" font-weight="800" letter-spacing="4">CODEX RESET</text>
+<text x="123" y="411" fill="#ffffff" font-size="206" font-weight="800" letter-spacing="-17">03</text>
+<text x="515" y="323" fill="#ffffff" font-size="45" font-weight="800" letter-spacing="1">AVAILABLE</text>
+<text x="518" y="372" fill="#ffe3ef" font-size="21" font-weight="700" letter-spacing="2">CREDITS REMAINING</text>
+<text x="88" y="556" fill="#a2a9b3" font-size="23" font-weight="700" letter-spacing="4">EXPIRY TIMELINE</text>
+<text x="992" y="556" fill="#79838e" font-size="18" font-weight="600" letter-spacing="1" text-anchor="end">LOCAL · UTC+8</text>
+<line x1="137" y1="647" x2="137" y2="1057" stroke="#39454d" stroke-width="3"/>
+<rect x="126" y="650" width="22" height="22" rx="4" fill="#e96091"/>
+<text x="191" y="673" fill="#f1f5f7" font-size="37" font-weight="700" letter-spacing="1">10 OCT</text>
+<text x="992" y="673" fill="#f1f5f7" font-size="50" font-weight="800" letter-spacing="-2" text-anchor="end">09:00</text>
+<text x="191" y="718" fill="#79838e" font-size="17" font-weight="600" letter-spacing="2">RESET CREDIT  01</text>
+<rect x="126" y="848" width="22" height="22" rx="4" fill="#e96091"/>
+<text x="191" y="871" fill="#f1f5f7" font-size="37" font-weight="700" letter-spacing="1">13 OCT</text>
+<text x="992" y="871" fill="#f1f5f7" font-size="50" font-weight="800" letter-spacing="-2" text-anchor="end">18:30</text>
+<text x="191" y="916" fill="#79838e" font-size="17" font-weight="600" letter-spacing="2">RESET CREDIT  02</text>
+<rect x="126" y="1046" width="22" height="22" rx="4" fill="#e96091"/>
+<text x="191" y="1069" fill="#f1f5f7" font-size="37" font-weight="700" letter-spacing="1">18 OCT</text>
+<text x="992" y="1069" fill="#f1f5f7" font-size="50" font-weight="800" letter-spacing="-2" text-anchor="end">09:00</text>
+<text x="191" y="1114" fill="#79838e" font-size="17" font-weight="600" letter-spacing="2">RESET CREDIT  03</text>
+<text x="88" y="1178" fill="#a2a9b3" font-size="18" font-weight="600" letter-spacing="1">USE THEM BEFORE THE CLOCK RUNS OUT</text>
+<line x1="88" y1="1230" x2="992" y2="1230" stroke="#39454d" stroke-width="2"/>
+<text x="88" y="1270" fill="#79838e" font-size="17" font-weight="600" letter-spacing="1">DESIGN PREVIEW  ·  SAMPLE DATA</text>
+<text x="992" y="1270" fill="#79838e" font-size="17" font-weight="600" letter-spacing="1" text-anchor="end">EXPIRY TIMES · LOCAL TIME UTC+8</text>
+</svg>

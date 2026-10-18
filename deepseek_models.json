@@ -1,0 +1,14 @@
+{
+  "deepseek-flash": [
+    {
+      "name": "DeepSeek-V4.1-Flash",
+      "since": "2026-10-14T21:00:47.143296+08:00"
+    }
+  ],
+  "deepseek-v4-pro": [
+    {
+      "name": "DeepSeek-V4-Pro",
+      "since": "2026-10-14T21:00:47.143296+08:00"
+    }
+  ]
+}

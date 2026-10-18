@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noob · 加框设计稿</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;background:#101115;color:#f6f4f7;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:1000px;margin:auto;padding:38px 22px 70px}
+h1{margin:0 0 5px;font-size:27px;letter-spacing:-.03em}
+.intro{margin:0 0 25px;color:#adaab3}
+article{margin:0 0 26px;padding:21px;border:1px solid #34353d;border-radius:14px;background:#191b22}
+h2{font-size:17px;margin:0 0 6px}.desc{margin:0 0 14px;color:#adaab3;font-size:14px}
+.terminal{background:#0b0d11;border:1px solid #3c3d44;border-radius:8px;overflow:auto;box-shadow:0 15px 30px #0005}
+pre{margin:0;padding:14px 16px;font:13px/1.5 Menlo,Monaco,Consolas,monospace;color:#c8ccd2;white-space:pre}
+.mint{color:#5fd3ba;font-weight:bold}
+</style></head><body><main>
+<h1>noob / 加框设计稿</h1>
+<p class="intro">80 列、同一份样本数据。（框内内容缩进比现在小 2 格，进度条宽度不变。）偏好哪个直接说，或要微调（比如只框 CODEX/DEEPSEEK、换线型、TOTAL 要不要框）都行。</p>
+<article><h2>方案 A · 圆角框 · 标题在顶边</h2><p class="desc">圆角细线，平台名嵌在顶边，CODEX / DEEPSEEK / TOTAL 都框起来。</p><div class="terminal"><pre>  ★  CODEX RESET  ·  UNKNOWN                                                    
+noob                                                              Oct 15  10:18
+───────────────────────────────────────────────────────────────────────────────
+<span class="mint">PLATFORMS</span>  ↑ even pace
+  ╭─ ◆ CODEX ──────────────────────────────────────────────────────────────────╮
+  │   5H   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱   91% left  reset Oct 23 03:33     │
+  │                                       ↑                                    │
+  │   7D   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱   45% left  reset Oct 30 00:46     │
+  │                                       ↑                                    │
+  │   COST     today $3.87  ·  week $0.00  ·  month $3.87  ·  all $0.00        │
+  │   193 session files                                                        │
+  │   renews   oct 22, 2026  ·  subscribed 23 days                             │
+  ╰────────────────────────────────────────────────────────────────────────────╯
+  ╭─ ● DEEPSEEK ───────────────────────────────────────────────────────────────╮
+  │   BALANCE  $15.49 / ¥110.00                                                │
+  │   COST     today $0.00  ·  week $0.00  ·  month $3.87  ·  all $0.00        │
+  ╰────────────────────────────────────────────────────────────────────────────╯
+  ╭─ TOTAL ────────────────────────────────────────────────────────────────────╮
+  │   COST     today $3.87  ·  week $0.00  ·  month $7.74  ·  all $0.00        │
+  │   tokens   today 1.5K  ·  week 0  ·  month 3.0K  ·  all 0                  │
+  ╰────────────────────────────────────────────────────────────────────────────╯</pre></div></article>
+<article><h2>方案 B · 方角框 · 标题在顶边</h2><p class="desc">直角细线，其余同 A。</p><div class="terminal"><pre>  ★  CODEX RESET  ·  UNKNOWN                                                    
+noob                                                              Oct 15  10:18
+───────────────────────────────────────────────────────────────────────────────
+<span class="mint">PLATFORMS</span>  ↑ even pace
+  ┌─ ◆ CODEX ──────────────────────────────────────────────────────────────────┐
+  │   5H   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱   91% left  reset Oct 23 03:33     │
+  │                                       ↑                                    │
+  │   7D   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱   45% left  reset Oct 30 00:46     │
+  │                                       ↑                                    │
+  │   COST     today $3.87  ·  week $0.00  ·  month $3.87  ·  all $0.00        │
+  │   193 session files                                                        │
+  │   renews   oct 22, 2026  ·  subscribed 23 days                             │
+  └────────────────────────────────────────────────────────────────────────────┘
+  ┌─ ● DEEPSEEK ───────────────────────────────────────────────────────────────┐
+  │   BALANCE  $15.49 / ¥110.00                                                │
+  │   COST     today $0.00  ·  week $0.00  ·  month $3.87  ·  all $0.00        │
+  └────────────────────────────────────────────────────────────────────────────┘
+  ┌─ TOTAL ────────────────────────────────────────────────────────────────────┐
+  │   COST     today $3.87  ·  week $0.00  ·  month $7.74  ·  all $0.00        │
+  │   tokens   today 1.5K  ·  week 0  ·  month 3.0K  ·  all 0                  │
+  └────────────────────────────────────────────────────────────────────────────┘</pre></div></article>
+<article><h2>方案 C · 粗线框 · 标题在顶边</h2><p class="desc">加粗边框，更强调。</p><div class="terminal"><pre>  ★  CODEX RESET  ·  UNKNOWN                                                    
+noob                                                              Oct 15  10:18
+───────────────────────────────────────────────────────────────────────────────
+<span class="mint">PLATFORMS</span>  ↑ even pace
+  ┏━ ◆ CODEX ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+  ┃   5H   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱   91% left  reset Oct 23 03:33     ┃
+  ┃                                       ↑                                    ┃
+  ┃   7D   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱   45% left  reset Oct 30 00:46     ┃
+  ┃                                       ↑                                    ┃
+  ┃   COST     today $3.87  ·  week $0.00  ·  month $3.87  ·  all $0.00        ┃
+  ┃   193 session files                                                        ┃
+  ┃   renews   oct 22, 2026  ·  subscribed 23 days                             ┃
+  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+  ┏━ ● DEEPSEEK ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+  ┃   BALANCE  $15.49 / ¥110.00                                                ┃
+  ┃   COST     today $0.00  ·  week $0.00  ·  month $3.87  ·  all $0.00        ┃
+  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+  ┏━ TOTAL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+  ┃   COST     today $3.87  ·  week $0.00  ·  month $7.74  ·  all $0.00        ┃
+  ┃   tokens   today 1.5K  ·  week 0  ·  month 3.0K  ·  all 0                  ┃
+  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛</pre></div></article>
+<article><h2>方案 D · 圆角框 · 标题在框内</h2><p class="desc">标题单独占框内第一行。</p><div class="terminal"><pre>  ★  CODEX RESET  ·  UNKNOWN                                                    
+noob                                                              Oct 15  10:18
+───────────────────────────────────────────────────────────────────────────────
+<span class="mint">PLATFORMS</span>  ↑ even pace
+  ╭────────────────────────────────────────────────────────────────────────────╮
+  │ ◆ CODEX                                                                    │
+  │   5H   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱   91% left  reset Oct 23 03:33     │
+  │                                       ↑                                    │
+  │   7D   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱   45% left  reset Oct 30 00:46     │
+  │                                       ↑                                    │
+  │   COST     today $3.87  ·  week $0.00  ·  month $3.87  ·  all $0.00        │
+  │   193 session files                                                        │
+  │   renews   oct 22, 2026  ·  subscribed 23 days                             │
+  ╰────────────────────────────────────────────────────────────────────────────╯
+  ╭────────────────────────────────────────────────────────────────────────────╮
+  │ ● DEEPSEEK                                                                 │
+  │   BALANCE  $15.49 / ¥110.00                                                │
+  │   COST     today $0.00  ·  week $0.00  ·  month $3.87  ·  all $0.00        │
+  ╰────────────────────────────────────────────────────────────────────────────╯
+  ╭────────────────────────────────────────────────────────────────────────────╮
+  │ TOTAL                                                                      │
+  │   COST     today $3.87  ·  week $0.00  ·  month $7.74  ·  all $0.00        │
+  │   tokens   today 1.5K  ·  week 0  ·  month 3.0K  ·  all 0                  │
+  ╰────────────────────────────────────────────────────────────────────────────╯</pre></div></article>
+<article><h2>方案 E · 圆角框 · TOTAL 不框</h2><p class="desc">只框 CODEX / DEEPSEEK，TOTAL 保持无框。</p><div class="terminal"><pre>  ★  CODEX RESET  ·  UNKNOWN                                                    
+noob                                                              Oct 15  10:18
+───────────────────────────────────────────────────────────────────────────────
+<span class="mint">PLATFORMS</span>  ↑ even pace
+  ╭─ ◆ CODEX ──────────────────────────────────────────────────────────────────╮
+  │   5H   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱   91% left  reset Oct 23 03:33     │
+  │                                       ↑                                    │
+  │   7D   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱   45% left  reset Oct 30 00:46     │
+  │                                       ↑                                    │
+  │   COST     today $3.87  ·  week $0.00  ·  month $3.87  ·  all $0.00        │
+  │   193 session files                                                        │
+  │   renews   oct 22, 2026  ·  subscribed 23 days                             │
+  ╰────────────────────────────────────────────────────────────────────────────╯
+  ╭─ ● DEEPSEEK ───────────────────────────────────────────────────────────────╮
+  │   BALANCE  $15.49 / ¥110.00                                                │
+  │   COST     today $0.00  ·  week $0.00  ·  month $3.87  ·  all $0.00        │
+  ╰────────────────────────────────────────────────────────────────────────────╯
+  TOTAL
+    COST     today $3.87  ·  week $0.00  ·  month $7.74  ·  all $0.00
+    tokens   today 1.5K  ·  week 0  ·  month 3.0K  ·  all 0</pre></div></article>
+</main></body></html>

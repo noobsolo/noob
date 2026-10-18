@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350" role="img" aria-labelledby="title">
+  <title id="title">AM I NOOB? — models card</title>
+  <defs>
+    <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse"><rect x="25" y="25" width="4" height="4" fill="#20282e"/></pattern>
+    <style>
+      .mono{font-family:Menlo,Monaco,'Courier New',monospace}
+      .mint{fill:#78edcf}.white{fill:#f1f5f7}.muted{fill:#a2a9b3}.dim{fill:#79838e}
+    </style>
+  </defs>
+  <rect width="1080" height="1350" fill="#0b0d0f"/>
+  <rect width="1080" height="1350" fill="url(#grid)"/>
+  <text class="mono mint" x="88" y="101" font-size="26" font-weight="800" letter-spacing="2">✱  AM I NOOB?</text>
+  <text id="card-date" class="mono muted" x="992" y="100" text-anchor="end" font-size="21" font-weight="600" letter-spacing="2">14 OCT 2026</text>
+
+  <text class="mono white" x="88" y="236" font-size="76" font-weight="800" letter-spacing="-2">MODEL COST</text>
+  <text class="mono dim" x="90" y="280" font-size="20" font-weight="600" letter-spacing="1">// ALL PLATFORMS · API-PRICE EQUIVALENT</text>
+
+  <text class="mono dim" x="88" y="382" font-size="20" font-weight="700" letter-spacing="3">MODEL</text>
+  <text id="head-day" class="mono dim" x="520" y="382" text-anchor="end" font-size="20" font-weight="700" letter-spacing="3">TODAY</text>
+  <text id="head-week" class="mono dim" x="660" y="382" text-anchor="end" font-size="20" font-weight="700" letter-spacing="3">WEEK</text>
+  <text id="head-month" class="mono dim" x="800" y="382" text-anchor="end" font-size="20" font-weight="700" letter-spacing="3">MONTH</text>
+  <text id="head-all" class="mono dim" x="992" y="382" text-anchor="end" font-size="20" font-weight="700" letter-spacing="3">ALL</text>
+  <line x1="88" y1="406" x2="992" y2="406" stroke="#414c54" stroke-width="2"/>
+
+  <g id="model-rows"/>
+
+  <line x1="88" y1="1250" x2="992" y2="1250" stroke="#414c54" stroke-width="2"/>
+  <text id="card-status" class="mono dim" x="88" y="1292" font-size="18" font-weight="600" letter-spacing="1">0 MODELS</text>
+  <text id="card-note" class="mono dim" x="992" y="1292" text-anchor="end" font-size="18" font-weight="600">CODEX ESTIMATE · DEEPSEEK ACTUAL</text>
+</svg>

@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350" role="img" aria-labelledby="title desc">
+  <title id="title">AM I NOOB? — usage card</title>
+  <desc id="desc">A dark pixel-grid spending overview inspired by the supplied reference. All amounts are sample API-equivalent estimates.</desc>
+  <defs>
+    <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse"><rect x="25" y="25" width="4" height="4" fill="#20282e"/></pattern>
+    <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="1" fill="#ffffff" opacity=".055"/></pattern>
+    <filter id="mint-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="7"/></filter>
+    <filter id="soft-glow" x="-35%" y="-35%" width="170%" height="170%"><feGaussianBlur stdDeviation="4"/></filter>
+    <filter id="avatar-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3"/></filter>
+    <clipPath id="icon-clip"><rect x="88" y="152" width="126" height="126"/></clipPath>
+    <style>
+      .mono{font-family:Menlo,Monaco,'Courier New',monospace}
+      .mint{fill:#78edcf}.white{fill:#f1f5f7}.muted{fill:#a2a9b3}.dim{fill:#79838e}
+      .label{font-size:24px;font-weight:700;letter-spacing:7px}
+      .small{font-size:18px;font-weight:600;letter-spacing:2px}
+      .money{font-weight:800;letter-spacing:-3px}
+    </style>
+  </defs>
+
+  <rect width="1080" height="1350" fill="#0b0d0f"/>
+  <rect width="1080" height="1350" fill="url(#grid)"/>
+
+  <!-- masthead -->
+  <text class="mono mint" x="88" y="101" font-size="26" font-weight="800" letter-spacing="2">✱  AM I NOOB?</text>
+  <text id="card-date" class="mono muted" x="992" y="100" text-anchor="end" font-size="21" font-weight="600" letter-spacing="2">23 SEP 2026</text>
+
+  <!-- pixel avatar -->
+  <rect x="88" y="152" width="126" height="126" fill="#101c25" stroke="#485961" stroke-width="4"/>
+  <g id="avatar-art" clip-path="url(#icon-clip)">
+    <path d="M92 166h118 M92 174h118 M92 182h118 M92 190h118 M92 198h118 M92 206h118 M92 214h118 M92 222h118 M92 230h118 M92 238h118 M92 246h118 M92 254h118 M92 262h118" stroke="#70efd7" stroke-opacity=".09" stroke-width="2"/>
+    <path d="M90 181l31-29h28l-58 54z M214 234l-42 42h-24l66-66z" fill="#285e68" opacity=".5"/>
+    <path d="M108 184h12v-12h12v-8h40v8h12v12h12v52h-12v16h-12v8h-40v-8h-12v-16h-12z" fill="#172a32" stroke="#73efd8" stroke-width="3"/>
+    <path d="M121 178h16v-7h30v7h16v10h9v16h-80v-16h9z" fill="#2a6870"/>
+    <path d="M116 195h72v8h-8v15h-56v-15h-8z" fill="#7af4df" filter="url(#avatar-glow)" opacity=".65"/>
+    <path d="M116 195h72v8h-8v15h-56v-15h-8z" fill="#78eed6"/>
+    <path d="M129 203h19v9h-19z M156 203h19v9h-19z" fill="#0a2730"/>
+    <path d="M139 218h26v7h-26z" fill="#ee9bab"/>
+    <path d="M128 231h48v7h-8v8h-32v-8h-8z" fill="#d588a4"/>
+    <path d="M138 247h28v7h-28z" fill="#78eed6"/>
+    <path d="M100 213h8v18h-8z M196 213h8v18h-8z" fill="#ee9bab"/>
+    <path d="M96 160h21v4h-17v17h-4z M185 160h21v21h-4v-17h-17z M96 249h4v17h17v4H96z M202 249h4v21h-21v-4h17z" fill="#82f9e2"/>
+    <path d="M93 193h13 M198 193h13 M93 241h13 M198 241h13" stroke="#f09bac" stroke-width="3"/>
+  </g>
+  <rect x="88" y="152" width="126" height="126" fill="url(#scan)" opacity=".8"/>
+
+  <text class="mono white" x="250" y="215" font-size="50" font-weight="800" filter="url(#soft-glow)" opacity=".26">noobsolo</text>
+  <text class="mono white" x="250" y="215" font-size="50" font-weight="800">noobsolo</text>
+  <text class="mono dim" x="251" y="257" font-size="20" font-weight="600">// USAGE CARD</text>
+
+  <text id="tokens" class="mono muted" x="991" y="177" text-anchor="end" font-size="22" font-weight="700" letter-spacing="1">28.4M <tspan class="dim" font-size="18" letter-spacing="4">TOKENS</tspan></text>
+  <text id="sessions" class="mono muted" x="991" y="219" text-anchor="end" font-size="22" font-weight="700" letter-spacing="1">42 <tspan class="dim" font-size="18" letter-spacing="4">SESSIONS</tspan></text>
+  <text id="models" class="mono muted" x="991" y="261" text-anchor="end" font-size="22" font-weight="700" letter-spacing="1">4 <tspan class="dim" font-size="18" letter-spacing="4">MODELS</tspan></text>
+
+  <!-- period totals -->
+  <rect x="88" y="359" width="12" height="12" fill="#77efcf"/>
+  <text class="mono muted label" x="120" y="372">TODAY</text>
+  <text id="today-amount" class="mono white money" x="88" y="475" font-size="86">$4<tspan font-size="57">.72</tspan></text>
+  <text class="mono dim small" x="991" y="464" text-anchor="end">LOCAL ESTIMATE</text>
+
+  <rect x="88" y="572" width="12" height="12" fill="#77efcf"/>
+  <text class="mono muted label" x="120" y="585">THIS MONTH</text>
+  <text id="month-amount-glow" class="mono mint money" x="88" y="714" font-size="109" filter="url(#mint-glow)" opacity=".22">$86<tspan font-size="65">.39</tspan></text>
+  <text id="month-amount" class="mono mint money" x="88" y="714" font-size="109">$86<tspan font-size="65">.39</tspan></text>
+
+  <line x1="88" y1="770" x2="992" y2="770" stroke="#414c54" stroke-width="2"/>
+  <text class="mono dim small" x="88" y="813">THIS WEEK</text>
+  <text id="week-amount" class="mono white" x="88" y="853" font-size="35" font-weight="800">$19.24</text>
+  <text class="mono dim small" x="565" y="813">ALL LOCAL</text>
+  <text id="all-amount" class="mono white" x="565" y="853" font-size="35" font-weight="800">$241.82</text>
+
+  <!-- model breakdown -->
+  <line x1="88" y1="902" x2="992" y2="902" stroke="#414c54" stroke-width="2"/>
+  <text class="mono muted" x="88" y="948" font-size="21" font-weight="700" letter-spacing="5">THIS MONTH / BY MODEL</text>
+  <text class="mono dim" x="991" y="948" text-anchor="end" font-size="18" font-weight="600">EST. USD</text>
+  <text id="model-name-0" class="mono muted" x="88" y="1008" font-size="24" letter-spacing="1">GPT-6-SOL</text>
+  <text id="model-value-0" class="mono white" x="992" y="1008" text-anchor="end" font-size="27" font-weight="800">$60.12</text>
+  <text id="model-name-1" class="mono muted" x="88" y="1062" font-size="24" letter-spacing="1">GPT-6-LUNA</text>
+  <text id="model-value-1" class="mono white" x="992" y="1062" text-anchor="end" font-size="27" font-weight="800">$14.08</text>
+  <text id="model-name-2" class="mono muted" x="88" y="1116" font-size="24" letter-spacing="1">GPT-5.6-SOL</text>
+  <text id="model-value-2" class="mono white" x="992" y="1116" text-anchor="end" font-size="27" font-weight="800">$9.44</text>
+  <text id="model-name-3" class="mono muted" x="88" y="1170" font-size="24" letter-spacing="1">OTHER</text>
+  <text id="model-value-3" class="mono white" x="992" y="1170" text-anchor="end" font-size="27" font-weight="800">$2.75</text>
+
+  <!-- footnote -->
+  <line x1="88" y1="1211" x2="992" y2="1211" stroke="#414c54" stroke-width="2"/>
+  <text id="card-status" class="mono dim" x="88" y="1251" font-size="17" font-weight="600">DESIGN PREVIEW · SAMPLE DATA</text>
+  <text id="card-note" class="mono dim" x="88" y="1280" font-size="17">API-equivalent estimates from local logs.</text>
+  <g class="mono">
+    <text x="747" y="1253" fill="#79838e" font-size="18" font-weight="700" letter-spacing="1">5H</text>
+    <rect x="831" y="1243" width="161" height="10" rx="2" fill="#293238"/>
+    <rect id="quota-5h-fill" x="831" y="1243" width="113" height="10" rx="2" fill="#62d98b"/>
+    <text id="quota-5h-unavailable" x="912" y="1253" text-anchor="middle" fill="#79838e" font-size="18"></text>
+
+    <text x="747" y="1283" fill="#79838e" font-size="18" font-weight="700" letter-spacing="1">WEEK</text>
+    <rect x="831" y="1273" width="161" height="10" rx="2" fill="#293238"/>
+    <rect id="quota-week-fill" x="831" y="1273" width="15" height="10" rx="2" fill="#f27b70"/>
+    <text id="quota-week-unavailable" x="912" y="1283" text-anchor="middle" fill="#79838e" font-size="18"></text>
+  </g>
+</svg>

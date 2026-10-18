@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noob · 布局方案预览</title>
+<style>
+:root { color-scheme:dark; }
+* { box-sizing:border-box; }
+body { margin:0; background:#101115; color:#f6f4f7; font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+main { max-width:1000px; margin:auto; padding:38px 22px 70px; }
+h1 { margin:0 0 5px; font-size:27px; letter-spacing:-.03em; }
+.intro { margin:0 0 25px; color:#adaab3; }
+article { margin:0 0 26px; padding:21px; border:1px solid #34353d; border-radius:14px; background:#191b22; }
+h2 { font-size:17px; margin:0 0 6px; }
+.desc { margin:0 0 14px; color:#adaab3; font-size:14px; }
+.terminal { background:#0b0d11; border:1px solid #3c3d44; border-radius:8px; overflow:auto; box-shadow:0 15px 30px #0005; }
+pre { margin:0; padding:14px 16px; font:13px/1.5 Menlo,Monaco,Consolas,monospace; color:#c8ccd2; white-space:pre; }
+.mint { color:#5fd3ba; font-weight:bold; }
+</style>
+</head>
+<body>
+<main>
+<h1>noob / 布局方案预览</h1>
+<p class="intro">同一个样本数据、80 列终端下的四种布局。都不使用颜色，只靠结构与分隔来区分 CODEX 和 DEEPSEEK。</p>
+<article>
+<h2>方案 A · 平台标题 + 右延规则线</h2>
+<p class="desc">每个平台是一节，标题右侧拉一条规则线到右边，节与节之间留空行。改动最小，仍沿用现在的 RATE LIMITS / USAGE 结构。</p>
+<div class="terminal wide"><pre><span class="mint">RATE LIMITS</span>  ↑ even pace
+
+  CODEX ────────────────────────────────────────────────────────────────────────
+    5h                ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱  91% left  reset Oct 23 03:33
+    7d                ▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱  45% left  reset Oct 30 00:46
+    renews oct 22, 2026  ·  subscribed 17 days
+
+  DEEPSEEK ─────────────────────────────────────────────────────────────────────
+    balance      ¥110.00
+
+<span class="mint">USAGE</span>
+
+  TOTAL ────────────────────────────────────────────────────────────────────────
+      today $3.87  ·  week $0.00  ·  month $7.74  ·  all $0.00
+      1.5K today  ·  3.0K month tokens
+  CODEX ────────────────────────────────────────────────────────────────────────
+      today $3.87  ·  week $0.00  ·  month $3.87  ·  all $0.00
+  DEEPSEEK ─────────────────────────────────────────────────────────────────────
+      today $0.00  ·  week $0.00  ·  month $3.87  ·  all $0.00</pre></div>
+</article>
+<article>
+<h2>方案 B · 分块边框</h2>
+<p class="desc">把每个平台用一个方框圈起来，视觉上彻底隔开。信息密度略降、进度条会短一点。</p>
+<div class="terminal wide"><pre><span class="mint">RATE LIMITS</span>  ↑ even pace
+
+  ┌ CODEX ─────────────────────────────────────────────────────────────────────┐
+  │     5h                ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱  91% left  reset Oct 23 03:33   │
+  │     7d                ▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱  45% left  reset Oct 30 00:46   │
+  │     renews oct 22, 2026  ·  subscribed 17 days                             │
+  └────────────────────────────────────────────────────────────────────────────┘
+  ┌ DEEPSEEK ──────────────────────────────────────────────────────────────────┐
+  │     balance      ¥110.00                                                   │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+<span class="mint">USAGE</span>
+  ┌ TOTAL ─────────────────────────────────────────────────────────────────────┐
+  │     today $3.87  ·  week $0.00  ·  month $7.74  ·  all $0.00               │
+  │     tokens 1.5K today  ·  3.0K month                                       │
+  └────────────────────────────────────────────────────────────────────────────┘
+  ┌ CODEX ─────────────────────────────────────────────────────────────────────┐
+  │     today $3.87  ·  week $0.00  ·  month $3.87  ·  all $0.00               │
+  └────────────────────────────────────────────────────────────────────────────┘
+  ┌ DEEPSEEK ──────────────────────────────────────────────────────────────────┐
+  │     today $0.00  ·  week $0.00  ·  month $3.87  ·  all $0.00               │
+  └────────────────────────────────────────────────────────────────────────────┘</pre></div>
+</article>
+<article>
+<h2>方案 C · 左栏导轨</h2>
+<p class="desc">平台名固定在左边栏，用竖线 │ 导轨把它的所有行串起来；续行左边留空。横向靠左、对比强烈。</p>
+<div class="terminal wide"><pre><span class="mint">RATE LIMITS</span>  ↑ even pace
+
+  CODEX    │ 5h    ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰   91% left  reset Oct 23 03:33
+           │ 7d    ▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱   45% left  reset Oct 30 00:46
+           │ renews oct 22, 2026  ·  subscribed 17 days
+  DEEPSEEK │ balance      ¥110.00
+
+<span class="mint">USAGE</span>
+  TOTAL    │    TODAY      WEEK     MONTH       ALL
+           │    $3.87     $0.00     $7.74     $0.00
+           │    tokens 1.5K today · 3.0K month
+  CODEX    │    $3.87     $0.00     $3.87     $0.00
+  DEEPSEEK │    $0.00     $0.00     $3.87     $0.00</pre></div>
+</article>
+<article>
+<h2>方案 D · 按平台合并</h2>
+<p class="desc">把 RATE LIMITS 和 USAGE 合并成一个「PLATFORMS」视图，每个平台下面同时列出配额、花费、续费。区分最明显，但结构调整最大。</p>
+<div class="terminal wide"><pre><span class="mint">PLATFORMS</span>  ↑ even pace
+
+  CODEX
+    quota    5h   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  91% left · reset Oct 23 03:33
+             7d   ▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱  45% left · reset Oct 30 00:46
+    cost     today $3.87 · week $0.00 · month $7.74 · all $0.00
+    renews   oct 22, 2026 · subscribed 17 days
+
+  DEEPSEEK
+    balance  ¥110.00
+    cost     today $0.00 · week $0.00 · month $3.87 · all $0.00</pre></div>
+</article>
+</main>
+</body>
+</html>

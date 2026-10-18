@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350" role="img" aria-label="Reset card demo 3, Windows">
+<defs>
+  <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse"><rect x="25" y="25" width="4" height="4" fill="#20282e"/></pattern>
+  <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="12"/></filter>
+  <style>text { font-family: Menlo, Monaco, 'Courier New', monospace; }</style>
+</defs>
+<rect x="0" y="0" width="1080" height="1350" rx="0" fill="#0b0d0f"/>
+<rect x="0" y="0" width="1080" height="1350" rx="0" fill="url(#grid)"/>
+<text x="88" y="101" fill="#78edcf" font-size="27" font-weight="800" letter-spacing="2">✱  NOOBSOLO</text>
+<text x="992" y="101" fill="#a2a9b3" font-size="18" font-weight="700" letter-spacing="1" text-anchor="end">RESET CARD / 09 OCT 2026</text>
+<text x="88" y="226" fill="#a2a9b3" font-size="26" font-weight="700" letter-spacing="6">RESET WINDOWS</text>
+<text x="88" y="371" fill="#78edcf" font-size="165" font-weight="800" letter-spacing="-9">3</text>
+<text x="246" y="313" fill="#f1f5f7" font-size="38" font-weight="800" letter-spacing="1">AVAILABLE</text>
+<text x="248" y="362" fill="#a2a9b3" font-size="21" font-weight="700" letter-spacing="2">CREDITS  /  EXPIRES AT</text>
+<line x1="88" y1="420" x2="992" y2="420" stroke="#78edcf" stroke-width="4"/>
+<rect x="88" y="490" width="288" height="554" rx="8" fill="#12191c" stroke="#39454d" stroke-width="2"/>
+<rect x="88" y="490" width="288" height="9" rx="0" fill="#78edcf"/>
+<text x="114" y="556" fill="#78edcf" font-size="20" font-weight="700" letter-spacing="2">CREDIT 01</text>
+<text x="110" y="795" fill="#f1f5f7" font-size="145" font-weight="800" letter-spacing="-12">10</text>
+<text x="114" y="856" fill="#a2a9b3" font-size="30" font-weight="700" letter-spacing="5">OCT</text>
+<line x1="114" y1="898" x2="350" y2="898" stroke="#39454d" stroke-width="1"/>
+<text x="114" y="985" fill="#f1f5f7" font-size="45" font-weight="800" letter-spacing="-2">09:00</text>
+<rect x="396" y="490" width="288" height="554" rx="8" fill="#12191c" stroke="#39454d" stroke-width="2"/>
+<rect x="396" y="490" width="288" height="9" rx="0" fill="#78edcf"/>
+<text x="422" y="556" fill="#78edcf" font-size="20" font-weight="700" letter-spacing="2">CREDIT 02</text>
+<text x="418" y="795" fill="#f1f5f7" font-size="145" font-weight="800" letter-spacing="-12">13</text>
+<text x="422" y="856" fill="#a2a9b3" font-size="30" font-weight="700" letter-spacing="5">OCT</text>
+<line x1="422" y1="898" x2="658" y2="898" stroke="#39454d" stroke-width="1"/>
+<text x="422" y="985" fill="#f1f5f7" font-size="45" font-weight="800" letter-spacing="-2">18:30</text>
+<rect x="704" y="490" width="288" height="554" rx="8" fill="#12191c" stroke="#39454d" stroke-width="2"/>
+<rect x="704" y="490" width="288" height="9" rx="0" fill="#78edcf"/>
+<text x="730" y="556" fill="#78edcf" font-size="20" font-weight="700" letter-spacing="2">CREDIT 03</text>
+<text x="726" y="795" fill="#f1f5f7" font-size="145" font-weight="800" letter-spacing="-12">18</text>
+<text x="730" y="856" fill="#a2a9b3" font-size="30" font-weight="700" letter-spacing="5">OCT</text>
+<line x1="730" y1="898" x2="966" y2="898" stroke="#39454d" stroke-width="1"/>
+<text x="730" y="985" fill="#f1f5f7" font-size="45" font-weight="800" letter-spacing="-2">09:00</text>
+<text x="88" y="1136" fill="#78edcf" font-size="20" font-weight="700" letter-spacing="2">01 — 03</text>
+<text x="992" y="1136" fill="#a2a9b3" font-size="20" font-weight="600" letter-spacing="2" text-anchor="end">SORTED BY EXPIRY</text>
+<line x1="88" y1="1230" x2="992" y2="1230" stroke="#39454d" stroke-width="2"/>
+<text x="88" y="1270" fill="#79838e" font-size="17" font-weight="600" letter-spacing="1">DESIGN PREVIEW  ·  SAMPLE DATA</text>
+<text x="992" y="1270" fill="#79838e" font-size="17" font-weight="600" letter-spacing="1" text-anchor="end">EXPIRY TIMES · LOCAL TIME UTC+8</text>
+</svg>

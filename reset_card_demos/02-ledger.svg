@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350" role="img" aria-label="Reset card demo 2, Ledger">
+<defs>
+  <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse"><rect x="25" y="25" width="4" height="4" fill="#20282e"/></pattern>
+  <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="12"/></filter>
+  <style>text { font-family: Menlo, Monaco, 'Courier New', monospace; }</style>
+</defs>
+<rect x="0" y="0" width="1080" height="1350" rx="0" fill="#0b0d0f"/>
+<rect x="0" y="0" width="1080" height="1350" rx="0" fill="url(#grid)"/>
+<text x="88" y="101" fill="#78edcf" font-size="27" font-weight="800" letter-spacing="2">✱  NOOBSOLO</text>
+<text x="992" y="101" fill="#a2a9b3" font-size="18" font-weight="700" letter-spacing="1" text-anchor="end">RESET CARD / 09 OCT 2026</text>
+<text x="88" y="236" fill="#a2a9b3" font-size="25" font-weight="700" letter-spacing="5">RESET / LEDGER</text>
+<text x="88" y="445" fill="#f1f5f7" font-size="225" font-weight="800" letter-spacing="-18">03</text>
+<text x="486" y="350" fill="#78edcf" font-size="47" font-weight="800" letter-spacing="1">CREDITS</text>
+<text x="488" y="401" fill="#a2a9b3" font-size="22" font-weight="700" letter-spacing="3">AVAILABLE NOW</text>
+<rect x="88" y="516" width="904" height="594" rx="10" fill="#11181b" stroke="#39454d" stroke-width="2"/>
+<text x="128" y="580" fill="#79838e" font-size="18" font-weight="700" letter-spacing="1">#</text>
+<text x="233" y="580" fill="#79838e" font-size="18" font-weight="700" letter-spacing="2">EXPIRES ON</text>
+<text x="952" y="580" fill="#79838e" font-size="18" font-weight="700" letter-spacing="2" text-anchor="end">TIME</text>
+<line x1="128" y1="625" x2="952" y2="625" stroke="#39454d" stroke-width="1"/>
+<text x="128" y="690" fill="#78edcf" font-size="27" font-weight="700" letter-spacing="0">01</text>
+<text x="233" y="690" fill="#f1f5f7" font-size="31" font-weight="700" letter-spacing="0">SAT / 10 OCT</text>
+<text x="952" y="690" fill="#f1f5f7" font-size="45" font-weight="800" letter-spacing="-1" text-anchor="end">09:00</text>
+<line x1="128" y1="787" x2="952" y2="787" stroke="#39454d" stroke-width="1"/>
+<text x="128" y="852" fill="#78edcf" font-size="27" font-weight="700" letter-spacing="0">02</text>
+<text x="233" y="852" fill="#f1f5f7" font-size="31" font-weight="700" letter-spacing="0">TUE / 13 OCT</text>
+<text x="952" y="852" fill="#f1f5f7" font-size="45" font-weight="800" letter-spacing="-1" text-anchor="end">18:30</text>
+<line x1="128" y1="949" x2="952" y2="949" stroke="#39454d" stroke-width="1"/>
+<text x="128" y="1014" fill="#78edcf" font-size="27" font-weight="700" letter-spacing="0">03</text>
+<text x="233" y="1014" fill="#f1f5f7" font-size="31" font-weight="700" letter-spacing="0">SUN / 18 OCT</text>
+<text x="952" y="1014" fill="#f1f5f7" font-size="45" font-weight="800" letter-spacing="-1" text-anchor="end">09:00</text>
+<text x="88" y="1180" fill="#78edcf" font-size="21" font-weight="700" letter-spacing="3">THREE WINDOWS OPEN</text>
+<text x="992" y="1180" fill="#a2a9b3" font-size="19" font-weight="600" letter-spacing="1" text-anchor="end">USE BEFORE EXPIRY ↗</text>
+<line x1="88" y1="1230" x2="992" y2="1230" stroke="#39454d" stroke-width="2"/>
+<text x="88" y="1270" fill="#79838e" font-size="17" font-weight="600" letter-spacing="1">DESIGN PREVIEW  ·  SAMPLE DATA</text>
+<text x="992" y="1270" fill="#79838e" font-size="17" font-weight="600" letter-spacing="1" text-anchor="end">EXPIRY TIMES · LOCAL TIME UTC+8</text>
+</svg>

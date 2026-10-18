@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>noob · 续费信息行预览</title>
+  <style>
+    :root { color-scheme:dark; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#101115; color:#f6f4f7; font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1050px; margin:auto; padding:38px 22px 70px; }
+    h1 { margin:0 0 5px; font-size:27px; letter-spacing:-.03em; }
+    .intro { margin:0 0 25px; color:#adaab3; }
+    .grid { display:grid; gap:22px; }
+    article { padding:21px; border:1px solid #34353d; border-radius:14px; background:#191b22; }
+    h2 { font-size:17px; margin:0 0 13px; }
+    .terminal { background:#0b0d11; border:1px solid #3c3d44; border-radius:8px; overflow:hidden; box-shadow:0 15px 30px #0005; font:14px/1.5 Menlo,Monaco,Consolas,monospace; }
+    .wide { width:min(100%,80ch); }
+    .narrow { width:min(100%,52ch); }
+    .banner { padding:8px 14px 9px; background:#b00065; color:#fff; }
+    .banner-head { display:flex; justify-content:space-between; font-weight:bold; white-space:nowrap; }
+    .banner-list { display:flex; gap:13px; margin-top:3px; white-space:nowrap; }
+    .banner-list span + span { border-left:1px solid #ffffff75; padding-left:13px; }
+    .narrow .banner-head { display:block; }
+    .narrow .banner-head span + span { display:block; font-weight:normal; margin-top:2px; }
+    .narrow .banner-list { display:block; }
+    .narrow .banner-list span { display:block; }
+    .narrow .banner-list span + span { border:0; padding:0; }
+    .renewal { padding:8px 16px 0; color:#92919a; font-weight:normal; white-space:nowrap; }
+    .sample { padding:12px 16px 16px; white-space:nowrap; overflow:hidden; }
+    .sample .title { font-weight:bold; }
+    .sample .rule { color:#64656e; }
+    .sample .section { color:#48c8d6; font-weight:bold; }
+    .sample .bar { color:#75cf94; }
+    .foot { margin:17px 0 0; color:#a5a2ac; font-size:13px; }
+    @media (max-width:600px) { main {padding:23px 12px 42px} article {padding:15px} .terminal {font-size:12px} }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>noob / 续费信息行</h1>
+    <p class="intro">粉色 reset 提示条之下，另起一行灰色辅助信息。续费日为账单页显示的日期；预览中的 17 天按 2026 年 10 月 9 日计算。</p>
+    <div class="grid">
+      <article>
+        <h2>80 列终端</h2>
+        <div class="terminal wide">
+          <div class="banner"><div class="banner-head"><span>★ &nbsp;CODEX RESET &nbsp;·&nbsp; 3 AVAILABLE</span><span>EXPIRES</span></div><div class="banner-list"><span>① Oct 23 03:33</span><span>② Oct 30 03:12</span><span>③ Nov 07 05:37</span></div></div>
+          <div class="renewal">renews oct 22, 2026 &nbsp;·&nbsp; subscribed 17 days</div>
+          <div class="sample"><span class="title">noob</span><br><span class="rule">────────────────────────────────────────</span><br><span class="section">RATE LIMITS</span><br>5H &nbsp;<span class="bar">████████████</span> 91% left</div>
+        </div>
+      </article>
+      <article>
+        <h2>52 列终端</h2>
+        <div class="terminal narrow">
+          <div class="banner"><div class="banner-head"><span>★ &nbsp;CODEX RESET &nbsp;·&nbsp; 3 AVAILABLE</span><span>EXPIRES</span></div><div class="banner-list"><span>① Oct 23 03:33</span><span>② Oct 30 03:12</span><span>③ Nov 07 05:37</span></div></div>
+          <div class="renewal">renews oct 22, 2026 &nbsp;·&nbsp; subscribed 17 days</div>
+          <div class="sample"><span class="title">noob</span><br><span class="rule">────────────────────────────────────────</span><br><span class="section">RATE LIMITS</span><br>5H &nbsp;<span class="bar">████████████</span> 91% left</div>
+        </div>
+      </article>
+    </div>
+    <p class="foot">正式 noob 已采用这一行；累计天数按本机日期每天更新。</p>
+  </main>
+</body>
+</html>

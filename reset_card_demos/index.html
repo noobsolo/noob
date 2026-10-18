@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noobsolo · Reset card demos</title>
+<style>
+  :root { color-scheme: dark; font-family: Menlo, Monaco, monospace; }
+  body { margin: 0; background: #0b0d0f; color: #f1f5f7; }
+  main { max-width: 1500px; margin: auto; padding: 48px 32px 80px; }
+  header { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 38px; }
+  h1 { margin: 0 0 12px; font-size: clamp(28px, 4vw, 52px); letter-spacing: -2px; }
+  .mint { color: #78edcf; }
+  p { margin: 0; color: #a2a9b3; line-height: 1.6; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+  article { border: 1px solid #39454d; background: #11181b; padding: 16px; border-radius: 10px; }
+  article img { width: 100%; height: auto; display: block; }
+  .label { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 16px 4px 2px; }
+  h2 { margin: 0; font-size: 19px; }
+  a { color: #78edcf; font-size: 13px; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  @media (max-width: 800px) { main { padding: 24px 12px 48px; } header { display: block; } .grid { grid-template-columns: 1fr; gap: 20px; } }
+</style>
+<main>
+  <header>
+    <div><h1><span class="mint">✱</span> Reset card / 4 directions</h1><p>与现有使用量卡片相同的 1080 × 1350 尺寸。点击卡片可查看原尺寸。</p></div>
+    <p>静态设计预览 · 示例数据<br>03 次可用 · 时间为各机会的到期时间</p>
+  </header>
+  <div class="grid">
+    <article><a href="01-signal.png"><img src="01-signal.png" alt="样式一，主数字与逐行到期时间"></a><div class="label"><h2>01 / Signal</h2><a href="01-signal.svg">SVG</a></div></article>
+    <article><a href="02-ledger.png"><img src="02-ledger.png" alt="样式二，精简账本式列表"></a><div class="label"><h2>02 / Ledger</h2><a href="02-ledger.svg">SVG</a></div></article>
+    <article><a href="03-windows.png"><img src="03-windows.png" alt="样式三，三栏机会卡片"></a><div class="label"><h2>03 / Windows</h2><a href="03-windows.svg">SVG</a></div></article>
+    <article><a href="04-pulse.png"><img src="04-pulse.png" alt="样式四，洋红主视觉与到期时间轴"></a><div class="label"><h2>04 / Pulse</h2><a href="04-pulse.svg">SVG</a></div></article>
+  </div>
+</main>
+</html>

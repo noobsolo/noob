@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+.claude/settings.local.json
+
+# runtime cache written next to the program
+pricing_cache.json
