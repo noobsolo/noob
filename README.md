@@ -18,7 +18,7 @@ Per-model breakdown with `k`:
 
 ## Cards
 
-Press `s` to save a usage card, or `m` to save a reset-credit card. Both are written to `~/Downloads` as PNGs.
+Press `s` to save a usage card, `m` for reset credits, or open the models view with `k` and press `s` for the model-cost card. All are written to `~/Downloads` as PNGs.
 
 <p align="center">
   <a href="assets/card-usage.png"><img src="assets/card-usage.png" width="46%" alt="noob usage card"></a>
@@ -26,6 +26,11 @@ Press `s` to save a usage card, or `m` to save a reset-credit card. Both are wri
   <a href="assets/card-reset.png"><img src="assets/card-reset.png" width="46%" alt="noob reset-credit card"></a>
 </p>
 <p align="center"><sub>Usage card with <code>s</code> · reset-credit card with <code>m</code></sub></p>
+
+<p align="center">
+  <a href="assets/models-card.png"><img src="assets/models-card.png" width="46%" alt="noob model cost card"></a>
+</p>
+<p align="center"><sub>Model cost card with <code>k</code> → <code>s</code></sub></p>
 
 ## Requirements
 
