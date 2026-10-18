@@ -1,13 +1,31 @@
 # noob
 
-A terminal dashboard for your Codex and DeepSeek usage.
+A terminal dashboard for your Codex and DeepSeek usage — quota bars, spend by model, reset credits, and shareable cards, without leaving the shell.
+
+![noob dashboard](assets/dashboard.png)
 
 ## What it shows
 
 - Codex 5H / WEEK quota bars (remaining %)
-- Cost and tokens per model: today, week, month, all
+- Cost per model: today, week, month, all (press `k`)
+- Token totals: today, week, month, all
 - Rate-limit reset credits and their expiry
 - DeepSeek balance (optional)
+
+Per-model breakdown with `k`:
+
+![noob models view](assets/models-view.png)
+
+## Cards
+
+Press `s` to save a usage card, or `m` to save a reset-credit card. Both are written to `~/Downloads` as PNGs.
+
+<p align="center">
+  <a href="assets/card-usage.png"><img src="assets/card-usage.png" width="46%" alt="noob usage card"></a>
+  &nbsp;&nbsp;
+  <a href="assets/card-reset.png"><img src="assets/card-reset.png" width="46%" alt="noob reset-credit card"></a>
+</p>
+<p align="center"><sub>Usage card with <code>s</code> · reset-credit card with <code>m</code></sub></p>
 
 ## Requirements
 
@@ -26,7 +44,7 @@ Keys:
 
 | Key | Action |
 | --- | --- |
-| `s` | Save a usage card PNG to `~/Downloads` |
+| `s` | Save a card for the current view (usage, or model costs in the models view) |
 | `m` | Save a reset-credit card PNG |
 | `k` | Toggle the models view |
 | `Ctrl-C` | Quit |
