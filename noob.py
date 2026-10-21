@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import math
 import os
+import plistlib
 import re
 import select
 import shutil
@@ -1560,13 +1561,202 @@ def render_loading(width=80, color=False):
                       "  " + paint("Loading...", "1;36", color)))
 
 
+DAILY_LABEL = "com.noob.dailycards"
+DAILY_LOG = "Library/Logs/noob-daily.log"
+LAUNCH_AGENT = "Library/LaunchAgents/%s.plist" % DAILY_LABEL
+
+
+def daily_cards_dir(directory=None):
+    """Archive folder for the nightly cards (one PNG pair per day)."""
+    if directory:
+        return Path(directory).expanduser()
+    return Path.home() / "Downloads" / "noob-daily"
+
+
+def daily_cards(directory=None, now=None):
+    """Save today's home usage card and models detail card; return (paths, warnings)."""
+    now = now or dt.datetime.now().astimezone()
+    directory = daily_cards_dir(directory)
+    stamp = now.strftime("%Y%m%d")
+    warnings = []
+    prices, _ = refresh_prices()
+    if prices:
+        RATES.update(prices["rates"])
+        for model in prices["rates"]:
+            LONG_RATES.pop(model, None)
+        LONG_RATES.update(prices["long_rates"])
+        LONG_CONTEXT_MODELS.difference_update(prices["rates"])
+        LONG_CONTEXT_MODELS.update(prices["long_rates"])
+    usd_cny = fetch_usd_cny() or FALLBACK_USD_CNY
+    deepseek_rates = deepseek_prices()
+    versions = load_deepseek_models()
+    deepseek_key = deepseek_api_key()
+    try:
+        if record_deepseek_versions(versions, fetch_deepseek_models(deepseek_key)):
+            save_deepseek_models(versions)
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        warnings.append("DeepSeek model query failed: %s" % exc)
+    sources = []
+    try:
+        sources.append(("Codex", scan_local_sessions()))
+    except OSError as exc:
+        warnings.append("Could not read local session logs: %s" % exc)
+    opencode_rows = None
+    pi_rows = None
+    deepseek_sources = []
+    if shutil.which("opencode"):
+        try:
+            opencode_rows = opencode_usage(
+                rates=deepseek_rates, usd_cny=usd_cny, versions=versions)
+            deepseek_sources.append(opencode_rows)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+            warnings.append("OpenCode usage query failed: %s" % exc)
+    try:
+        pi_rows = pi_usage(usd_cny=usd_cny, versions=versions, rates=deepseek_rates)
+        deepseek_sources.append(pi_rows)
+    except (OSError, RuntimeError, ValueError) as exc:
+        warnings.append("pi usage query failed: %s" % exc)
+    if deepseek_sources:
+        sources.append(("DeepSeek", merge_deepseek_usage(*deepseek_sources)))
+    usage = build_usage(sources)
+    usage["deepseek_split"] = deepseek_split_costs(opencode_rows, pi_rows)
+    try:
+        limits = codex_data()
+    except (OSError, RuntimeError, ValueError) as exc:
+        limits = {}
+        warnings.append("Codex quota query failed: %s" % exc)
+    balance = None
+    if deepseek_key:
+        try:
+            balance = deepseek_balance(deepseek_key)
+        except (RuntimeError, ValueError) as exc:
+            warnings.append("DeepSeek balance query failed: %s" % exc)
+    paths = [
+        save_card(usage, directory=directory, now=now, quotas=card_quotas(limits),
+                  deepseek=deepseek_money_text(balance, usd_cny),
+                  name="noobsolo-usage-%s.png" % stamp),
+        save_models_card(usage, directory=directory, now=now, sort_period="month",
+                         sort_desc=True, name="noobsolo-models-%s.png" % stamp),
+    ]
+    return paths, warnings
+
+
+def parse_clock(value):
+    """Turn 'HH:MM' into (hour, minute), rejecting anything outside a day."""
+    matched = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*", value or "")
+    if not matched:
+        raise ValueError("Use HH:MM, for example 00:00")
+    hour, minute = int(matched.group(1)), int(matched.group(2))
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError("Use HH:MM between 00:00 and 23:59")
+    return hour, minute
+
+
+def launch_path(agent_path=None):
+    return Path(agent_path) if agent_path else Path.home() / LAUNCH_AGENT
+
+
+def launch_plist(hour=0, minute=0, python=None, script=None, log=None, directory=None):
+    """Build the launchd agent that runs the nightly capture."""
+    python = python or ("/usr/bin/python3" if Path("/usr/bin/python3").exists()
+                        else sys.executable)
+    script = str(Path(script or __file__).resolve())
+    log = str(Path(log) if log else Path.home() / DAILY_LOG)
+    arguments = [python, script, "--daily-cards"]
+    if directory:
+        arguments.extend(["--daily-dir", str(Path(directory).expanduser())])
+    path_entries = []
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if entry and entry not in path_entries:
+            path_entries.append(entry)
+    for entry in ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
+                  "/usr/sbin", "/sbin", str(Path.home() / ".local" / "bin")):
+        if entry not in path_entries:
+            path_entries.append(entry)
+    return {
+        "Label": DAILY_LABEL,
+        "ProgramArguments": arguments,
+        "StartCalendarInterval": {"Hour": hour, "Minute": minute},
+        "RunAtLoad": False,
+        "ProcessType": "Background",
+        "EnvironmentVariables": {"PATH": os.pathsep.join(path_entries)},
+        "StandardOutPath": log,
+        "StandardErrorPath": log,
+    }
+
+
+def launchctl(*args):
+    return subprocess.run(["launchctl", *args], capture_output=True, text=True)
+
+
+def install_daily_schedule(at="00:00", agent_path=None, python=None, script=None,
+                           directory=None):
+    """Write and load the launchd agent that captures the cards every night."""
+    hour, minute = parse_clock(at)
+    destination = launch_path(agent_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("wb") as stream:
+        plistlib.dump(launch_plist(hour, minute, python, script, directory=directory),
+                      stream)
+    domain = "gui/%d" % os.getuid()
+    launchctl("bootout", "%s/%s" % (domain, DAILY_LABEL))
+    loaded = launchctl("bootstrap", domain, str(destination))
+    if loaded.returncode != 0:
+        # Older macOS releases only support the deprecated load syntax.
+        loaded = launchctl("load", "-w", str(destination))
+    if loaded.returncode != 0:
+        message = (loaded.stderr or loaded.stdout or "").strip()
+        raise RuntimeError(message or "launchctl could not load %s" % destination)
+    return destination
+
+
+def uninstall_daily_schedule(agent_path=None):
+    destination = launch_path(agent_path)
+    domain = "gui/%d" % os.getuid()
+    launchctl("bootout", "%s/%s" % (domain, DAILY_LABEL))
+    destination.unlink(missing_ok=True)
+    return destination
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="noob", description="Show subscription quotas, API balances, and the API-price equivalent of local token usage")
     parser.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     parser.add_argument("--once", action="store_true", help="show one snapshot without auto-refresh")
     parser.add_argument("--api", action="store_true", help="also query API organization billing (requires OPENAI_ADMIN_KEY)")
     parser.add_argument("--api-only", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--daily-cards", action="store_true",
+                        help="save today's usage card and models card, then exit")
+    parser.add_argument("--daily-dir", metavar="DIR",
+                        help="archive folder for --daily-cards (default ~/Downloads/noob-daily)")
+    parser.add_argument("--install-daily", nargs="?", const="00:00", metavar="HH:MM",
+                        help="capture the cards every night at HH:MM via launchd (default 00:00)")
+    parser.add_argument("--uninstall-daily", action="store_true",
+                        help="remove the nightly capture schedule")
     args = parser.parse_args(argv)
+    if args.uninstall_daily:
+        destination = uninstall_daily_schedule()
+        print("Removed nightly capture: %s" % destination)
+        return 0
+    if args.install_daily:
+        try:
+            destination = install_daily_schedule(args.install_daily,
+                                                 directory=args.daily_dir)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print("Could not schedule the nightly capture: %s" % exc, file=sys.stderr)
+            return 1
+        print("Nightly cards at %s: %s" % (args.install_daily, destination))
+        return 0
+    if args.daily_cards:
+        try:
+            paths, daily_warnings = daily_cards(args.daily_dir)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print("Could not save the daily cards: %s" % exc, file=sys.stderr)
+            return 1
+        for path in paths:
+            print("Saved: %s" % path)
+        for warning in daily_warnings:
+            print("warning: %s" % warning, file=sys.stderr)
+        return 0
     api_requested = args.api or args.api_only
     interactive = sys.stdout.isatty()
     color = interactive and not args.no_color
@@ -1598,6 +1788,7 @@ def main(argv=None):
             deepseek_versions = load_deepseek_models()
             if record_deepseek_versions(deepseek_versions, fetch_deepseek_models(deepseek_key)):
                 save_deepseek_models(deepseek_versions)
+            last_day = dt.date.today()
             while True:
                 started = time.monotonic()
                 warnings = []
@@ -1775,6 +1966,16 @@ def main(argv=None):
                     redraw()
 
                 redraw()
+                if dt.date.today() != last_day:
+                    # Keep the nightly archive going when the dashboard stays open.
+                    last_day = dt.date.today()
+                    try:
+                        paths, nightly_warnings = daily_cards()
+                        warnings.extend(nightly_warnings)
+                        save_notice = "Saved nightly cards: %s" % paths[0].parent
+                    except (OSError, RuntimeError, ValueError) as exc:
+                        warnings.append("Could not save the nightly cards: %s" % exc)
+                    redraw()
                 if not watch:
                     return 1 if warnings else 0
                 wait_for_refresh(deadline, width, color, input_fd=input_fd,

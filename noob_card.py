@@ -236,24 +236,27 @@ def models_card_svg(usage, now=None, sort_period="month", sort_desc=True):
     return ET.tostring(root, encoding="unicode")
 
 
-def save_card(usage, directory=None, now=None, rng=None, quotas=None, deepseek=None):
+def save_card(usage, directory=None, now=None, rng=None, quotas=None, deepseek=None, name=None):
     """Save a 1080 × 1350 PNG to Downloads and return its path."""
     now = now or dt.datetime.now().astimezone()
     directory = Path(directory) if directory is not None else Path.home() / "Downloads"
     directory.mkdir(parents=True, exist_ok=True)
-    name = "noobsolo-usage-%s-%s.png" % (now.strftime("%Y%m%d-%H%M%S"), secrets.token_hex(2))
+    name = name or "noobsolo-usage-%s-%s.png" % (now.strftime("%Y%m%d-%H%M%S"),
+                                                 secrets.token_hex(2))
     destination = directory / name
     image = card_svg(usage, now, rng, quotas, deepseek)
     save_svg_png(image, destination)
     return destination
 
 
-def save_models_card(usage, directory=None, now=None, sort_period="month", sort_desc=True):
+def save_models_card(usage, directory=None, now=None, sort_period="month", sort_desc=True,
+                     name=None):
     """Save the detail model-cost card and return its path."""
     now = now or dt.datetime.now().astimezone()
     directory = Path(directory) if directory is not None else Path.home() / "Downloads"
     directory.mkdir(parents=True, exist_ok=True)
-    name = "noobsolo-models-%s-%s.png" % (now.strftime("%Y%m%d-%H%M%S"), secrets.token_hex(2))
+    name = name or "noobsolo-models-%s-%s.png" % (now.strftime("%Y%m%d-%H%M%S"),
+                                                  secrets.token_hex(2))
     destination = directory / name
     save_svg_png(models_card_svg(usage, now, sort_period, sort_desc), destination)
     return destination

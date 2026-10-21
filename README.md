@@ -54,6 +54,28 @@ Keys:
 | `k` | Toggle the models view |
 | `Ctrl-C` | Quit |
 
+## Nightly cards
+
+Capture the home usage card and the models detail card every night at midnight,
+into `~/Downloads/noob-daily/`:
+
+```sh
+noob --install-daily          # every night at 00:00
+noob --install-daily 23:50    # or another time
+noob --uninstall-daily        # remove the schedule
+noob --daily-cards            # capture right now
+```
+
+Files are named `noobsolo-usage-YYYYMMDD.png` and `noobsolo-models-YYYYMMDD.png`,
+so re-running on the same day replaces that day's pair instead of piling up
+duplicates. Pass `--daily-dir DIR` (on its own or together with
+`--install-daily`) to archive somewhere other than Downloads.
+A dashboard left open across midnight captures on its own too.
+
+The schedule is a launchd agent at `~/Library/LaunchAgents/com.noob.dailycards.plist`;
+its output goes to `~/Library/Logs/noob-daily.log`. If the Mac is asleep at
+midnight, launchd runs the capture once it wakes.
+
 ## Optional
 
 DeepSeek balance — store the key once in the macOS Keychain:

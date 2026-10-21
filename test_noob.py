@@ -2,8 +2,10 @@ import datetime as dt
 import io
 import json
 import os
+import plistlib
 import random
 import re
+import subprocess
 import tempfile
 import time
 import unicodedata
@@ -1322,6 +1324,121 @@ class NoobTest(unittest.TestCase):
         self.assertIn("GPT-6-SOL", texts)
         self.assertIn("DEEPSEEK-FLASH", texts)
         self.assertEqual(root.find(".//*[@id='card-status']").text, "2 MODELS")
+
+    def test_daily_cards_saves_usage_and_models_cards_for_the_day(self):
+        source = {"day": {"gpt-6-sol": {"input": 1000, "cached": 0, "write": 0,
+                                        "output": 100, "estimate": 1.0, "unpriced": 0,
+                                        "calls": 1}}}
+        limits = {"rateLimits": {"limitId": "codex", "primary": {
+            "usedPercent": 20, "windowDurationMins": 300}, "secondary": {
+            "usedPercent": 61, "windowDurationMins": 10080}}}
+        usage_path = Path("/tmp/archive/noobsolo-usage-20261021.png")
+        models_path = Path("/tmp/archive/noobsolo-models-20261021.png")
+        moment = dt.datetime(2026, 10, 21, 0, 0, 5,
+                             tzinfo=dt.timezone(dt.timedelta(hours=8)))
+        with mock.patch.object(noob, "scan_local_sessions", return_value=source), \
+             mock.patch.object(noob, "codex_data", return_value=limits), \
+             mock.patch.object(noob, "save_card", return_value=usage_path) as card, \
+             mock.patch.object(noob, "save_models_card", return_value=models_path) as models:
+            paths, warnings = noob.daily_cards(directory="/tmp/archive", now=moment)
+        self.assertEqual(paths, [usage_path, models_path])
+        self.assertEqual(warnings, [])
+        self.assertEqual(card.call_args.kwargs["directory"], Path("/tmp/archive"))
+        self.assertEqual(card.call_args.kwargs["now"], moment)
+        self.assertEqual(card.call_args.kwargs["name"], "noobsolo-usage-20261021.png")
+        self.assertEqual(card.call_args.kwargs["quotas"], {300: (80, "32"), 10080: (39, "33")})
+        self.assertEqual(models.call_args.kwargs["name"], "noobsolo-models-20261021.png")
+        self.assertEqual(models.call_args.kwargs["sort_period"], "month")
+        self.assertTrue(models.call_args.kwargs["sort_desc"])
+
+    def test_daily_cards_cli_prints_both_paths(self):
+        first = Path("/tmp/archive/noobsolo-usage-20261021.png")
+        second = Path("/tmp/archive/noobsolo-models-20261021.png")
+        output = io.StringIO()
+        with mock.patch.object(noob, "daily_cards", return_value=([first, second], [])) as capture, \
+             mock.patch.object(noob.sys, "stdout", output):
+            self.assertEqual(noob.main(["--daily-cards", "--daily-dir", "/tmp/archive"]), 0)
+        capture.assert_called_once_with("/tmp/archive")
+        self.assertIn("Saved: %s" % first, output.getvalue())
+        self.assertIn("Saved: %s" % second, output.getvalue())
+
+    def test_install_daily_schedule_writes_launch_agent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            agent = Path(folder) / "LaunchAgents" / "com.noob.dailycards.plist"
+            with mock.patch.object(noob, "launchctl",
+                                   return_value=subprocess.CompletedProcess([], 0, "", "")) as control:
+                path = noob.install_daily_schedule("23:30", agent_path=agent,
+                                                   python="/usr/bin/python3",
+                                                   script="/tmp/noob.py")
+            contents = plistlib.loads(path.read_bytes())
+            self.assertTrue(agent.is_file())
+        self.assertEqual(contents["Label"], "com.noob.dailycards")
+        self.assertEqual(contents["StartCalendarInterval"], {"Hour": 23, "Minute": 30})
+        self.assertEqual(contents["ProgramArguments"],
+                         ["/usr/bin/python3", str(Path("/tmp/noob.py").resolve()),
+                          "--daily-cards"])
+        self.assertIn("/usr/bin", contents["EnvironmentVariables"]["PATH"].split(os.pathsep))
+        self.assertFalse(contents["RunAtLoad"])
+        self.assertEqual(control.call_count, 2)
+        self.assertEqual(noob.launch_plist(directory="/tmp/archive")["ProgramArguments"][-2:],
+                         ["--daily-dir", "/tmp/archive"])
+
+    def test_install_daily_schedule_falls_back_to_legacy_launchctl(self):
+        failures = [subprocess.CompletedProcess([], 1, "", "bootstrap failed"),
+                    subprocess.CompletedProcess([], 1, "", "bootstrap failed"),
+                    subprocess.CompletedProcess([], 1, "", "load failed")]
+        with tempfile.TemporaryDirectory() as folder:
+            with mock.patch.object(noob, "launchctl", side_effect=failures):
+                with self.assertRaises(RuntimeError):
+                    noob.install_daily_schedule(
+                        "00:00", agent_path=Path(folder) / "agent.plist")
+
+    def test_uninstall_daily_schedule_removes_the_agent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            agent = Path(folder) / "agent.plist"
+            agent.write_text("stale")
+            with mock.patch.object(noob, "launchctl") as control:
+                removed = noob.uninstall_daily_schedule(agent_path=agent)
+        self.assertEqual(removed, agent)
+        self.assertFalse(agent.exists())
+        self.assertEqual(control.call_args.args[0], "bootout")
+
+    def test_dashboard_captures_cards_when_the_day_rolls_over(self):
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+
+        real_date = dt.date
+
+        class Day(real_date):
+            calls = 0
+
+            @classmethod
+            def today(cls):
+                Day.calls += 1
+                if Day.calls == 1:
+                    return real_date(2026, 10, 20)
+                return real_date(2026, 10, 21)
+
+        terminal = Terminal()
+        saved = [Path("/tmp/archive/noobsolo-usage-20261021.png"),
+                 Path("/tmp/archive/noobsolo-models-20261021.png")]
+        with mock.patch.object(noob.sys, "stdout", terminal), \
+             mock.patch.object(noob, "codex_data", return_value={}), \
+             mock.patch.object(noob, "scan_local_sessions", return_value={}), \
+             mock.patch.object(noob.dt, "date", Day), \
+             mock.patch.object(noob, "daily_cards", return_value=(saved, [])) as capture, \
+             mock.patch.object(noob, "wait_for_refresh", side_effect=KeyboardInterrupt):
+            self.assertEqual(noob.main([]), 0)
+        capture.assert_called_once_with()
+        self.assertIn("Saved nightly cards", terminal.getvalue())
+
+    def test_parse_clock_rejects_bad_times(self):
+        self.assertEqual(noob.parse_clock("00:00"), (0, 0))
+        self.assertEqual(noob.parse_clock(" 7:05 "), (7, 5))
+        for value in ("24:00", "12:60", "midnight", "12", ""):
+            with self.assertRaises(ValueError):
+                noob.parse_clock(value)
 
 
 if __name__ == "__main__":
