@@ -76,7 +76,9 @@ A dashboard left open across midnight captures on its own too.
 
 The schedule is a launchd agent at `~/Library/LaunchAgents/com.noob.dailycards.plist`;
 its output goes to `~/Library/Logs/noob-daily.log`. If the Mac is asleep at
-midnight, launchd runs the capture once it wakes.
+midnight, launchd runs the capture once it wakes. The agent reuses the Python
+interpreter that ran `--install-daily`, so it keeps that interpreter's
+decompression support instead of falling back to the system Python.
 
 ## Optional
 

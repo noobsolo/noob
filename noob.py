@@ -1720,8 +1720,10 @@ def launch_path(agent_path=None):
 
 def launch_plist(hour=0, minute=0, python=None, script=None, log=None, directory=None):
     """Build the launchd agent that runs the nightly capture."""
-    python = python or ("/usr/bin/python3" if Path("/usr/bin/python3").exists()
-                        else sys.executable)
+    # Reuse the interpreter this snapshot was installed with, so the nightly
+    # agent runs in the same Python (and with the same zstd support) as the
+    # interactive dashboard instead of silently dropping to the system one.
+    python = python or sys.executable or "/usr/bin/python3"
     script = str(Path(script or __file__).resolve())
     log = str(Path(log) if log else Path.home() / DAILY_LOG)
     arguments = [python, script, "--daily-cards"]
