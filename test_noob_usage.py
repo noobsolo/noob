@@ -99,10 +99,28 @@ class LedgerTest(unittest.TestCase):
     def test_default_ledger_is_local_and_gitignored(self):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("NOOB_USAGE_DIR", None)
-            ledger = UsageLedger()
+            ledger = UsageLedger(migrate=False)
         root = Path(noob_usage.__file__).resolve().parent
         self.assertEqual(ledger.directory, root / "usage")
         self.assertIn("usage/", (root / ".gitignore").read_text(encoding="utf-8"))
+
+    def test_moves_the_legacy_ledger_once(self):
+        with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as home:
+            legacy = Path(home) / "usage"
+            old = UsageLedger(legacy)
+            with old.transaction() as (state, events):
+                events.append(codex_event("2026-10-28", cost=1.0))
+            destination = Path(repo) / "usage"
+            with mock.patch.object(noob_usage, "default_directory",
+                                   return_value=destination), \
+                 mock.patch.object(noob_usage, "legacy_directory", return_value=legacy):
+                ledger = UsageLedger()
+                again = UsageLedger()
+            self.assertEqual(ledger.directory, destination)
+            self.assertTrue(ledger.has_events())
+            self.assertEqual(len(ledger.read_events()), 1)
+            self.assertFalse(legacy.exists())
+            self.assertEqual(len(again.read_events()), 1)
 
 
 class CodexCaptureTest(unittest.TestCase):

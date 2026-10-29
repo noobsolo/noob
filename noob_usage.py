@@ -14,6 +14,7 @@ import datetime as dt
 import fcntl
 import json
 import os
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -30,6 +31,11 @@ def default_directory():
     # Lives next to the program and is gitignored: every checkout keeps its own
     # private ledger, and the updater never sees a dirty tracked file.
     return Path(__file__).resolve().parent / "usage"
+
+
+def legacy_directory():
+    """Older releases kept the same ledger under the user's data folder."""
+    return Path.home() / ".local" / "share" / "noob" / "usage"
 
 
 def empty_state():
@@ -76,11 +82,40 @@ def _clean_state(raw):
 class UsageLedger:
     """Local append-only ledger plus capture watermarks."""
 
-    def __init__(self, directory=None):
+    def __init__(self, directory=None, migrate=True):
         self.directory = Path(directory).expanduser() if directory else default_directory()
         self.events_dir = self.directory / "events"
         self.state_path = self.directory / "state.json"
         self.lock_path = self.directory / ".lock"
+        if migrate and directory is None and not os.environ.get("NOOB_USAGE_DIR"):
+            self._migrate_legacy()
+
+    def _migrate_legacy(self):
+        """Move the pre-checkout ledger once so existing history is not orphaned."""
+        legacy = legacy_directory()
+        if legacy == self.directory or not legacy.is_dir():
+            return
+        try:
+            legacy_has_events = any(
+                path.stat().st_size for path in legacy.glob("events/*.jsonl"))
+        except OSError:
+            legacy_has_events = False
+        if self.has_events() or not legacy_has_events:
+            return
+        if self.directory.exists():
+            try:
+                self.directory.rmdir()  # Only succeeds when it has no contents.
+            except OSError:
+                return
+        try:
+            self.directory.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(legacy), str(self.directory))
+        except OSError:
+            return
+        try:
+            legacy.parent.rmdir()
+        except OSError:
+            pass
 
     # -- storage ---------------------------------------------------------
 
