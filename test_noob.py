@@ -1453,6 +1453,11 @@ class NoobTest(unittest.TestCase):
         self.assertEqual(noob.launch_plist(directory="/tmp/archive")["ProgramArguments"][-2:],
                          ["--daily-dir", "/tmp/archive"])
 
+    def test_launch_agent_reuses_the_running_python(self):
+        with mock.patch.object(noob.sys, "executable", "/opt/conda/bin/python3.14"):
+            arguments = noob.launch_plist()["ProgramArguments"]
+        self.assertEqual(arguments[0], "/opt/conda/bin/python3.14")
+
     def test_install_daily_schedule_falls_back_to_legacy_launchctl(self):
         failures = [subprocess.CompletedProcess([], 1, "", "bootstrap failed"),
                     subprocess.CompletedProcess([], 1, "", "bootstrap failed"),
