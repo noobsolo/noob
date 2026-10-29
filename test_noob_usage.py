@@ -296,6 +296,18 @@ class DeepSeekCaptureTest(unittest.TestCase):
 
 
 class UiAdapterTest(unittest.TestCase):
+    def test_ledger_rows_keep_every_window_when_one_is_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = UsageLedger(tmp)
+            with ledger.transaction() as (state, events):
+                events.append(deepseek_event("2026-09-30", cost_cny=4.0))
+            rows = ledger.period_rows("DeepSeek", NOW)
+            self.assertEqual(sorted(rows), sorted(noob_usage.PERIODS))
+            self.assertEqual(rows["day"], {})
+            self.assertEqual(rows["all"]["DeepSeek V4.1 Flash"]["estimate_cny"], 4.0)
+            sources = noob.ledger_usage_sources(ledger, NOW)
+            self.assertEqual([name for name, _ in sources], ["DeepSeek"])
+
     def test_ledger_rows_feed_the_existing_dashboard(self):
         with tempfile.TemporaryDirectory() as tmp:
             ledger = UsageLedger(tmp)
