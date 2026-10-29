@@ -37,7 +37,7 @@ from noob_usage import PERIODS as USAGE_PERIODS, UsageLedger
 # Release version, shown at the bottom-right of the dashboard. Every change
 # bumps the middle number unless the request says otherwise:
 # 0.1.0 -> 0.2.0 -> 0.3.0 ...
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 
 API_BASE = "https://api.openai.com/v1"
@@ -970,17 +970,23 @@ def deepseek_split_costs(opencode_rows, pi_rows):
     return result
 
 
-def deepseek_split_lines(split, width, color, indent=4):
-    """Dimmed opencode/pi cost sub-rows shown under the DEEPSEEK cost line."""
-    if not split:
-        return []
+def deepseek_cost_lines(platform, split, width, color, indent=4):
+    """Render total and source costs with shared period widths and wrapping."""
+    rows = [("cost", cost_pairs(platform["totals"], platform["currency"]))]
+    if split:
+        for name in ("opencode", "pi"):
+            cny = ((split.get(name) or {}).get("cny")) or {}
+            rows.append((name, [(label.lower(), "¥%.2f" % (cny.get(period) or 0.0))
+                                for period, label in PERIODS]))
+    column_widths = [max(len("%s %s" % pairs[i]) for _, pairs in rows)
+                     for i in range(len(PERIODS))]
     lines = []
-    for name in ("opencode", "pi"):
-        cny = ((split.get(name) or {}).get("cny")) or {}
-        pairs = [(label.lower(), "¥%.2f" % (cny.get(period) or 0.0))
-                 for period, label in PERIODS]
+    for name, pairs in rows:
+        dim = "2" if name != "cost" else None
         lines.extend(summary_lines(name, pairs, width, color, indent=indent,
-                                   key_style="2", value_style="2", uppercase=False))
+                                   key_style=dim, value_style=dim, uppercase=name == "cost",
+                                   accent="today" if name == "cost" else None,
+                                   column_widths=column_widths))
     return lines
 
 
@@ -1414,21 +1420,25 @@ def keyed_line(key, value, width, color, indent=4, key_width=9, value_style=None
 
 
 def summary_lines(key, pairs, width, color, indent=4, key_width=9, value_style=None,
-                  key_style=None, uppercase=True, accent=None):
+                  key_style=None, uppercase=True, accent=None, column_widths=None):
     """Render a keyed digest inline, or one period per line when space is tight.
 
     The value whose label equals `accent` is highlighted green; the rest use
     `value_style` (or the default foreground).
     """
-    inline = "  ·  ".join("%s %s" % pair for pair in pairs)
-    if len(inline) <= width - indent - key_width:
+    items = ["%s %s" % pair for pair in pairs]
+    widths = column_widths if column_widths is not None else list(map(len, items))
+    inline_width = sum(widths) + len("  ·  ") * (len(items) - 1)
+    if inline_width <= width - indent - key_width:
         text = key.upper() if uppercase else key
         lead = " " * indent + (paint(text.ljust(key_width), key_style, color) if key_style
                                else text.ljust(key_width))
         parts = []
-        for label, value in pairs:
+        for index, (label, value) in enumerate(pairs):
             style = "92" if accent and label == accent else value_style
-            item = "%s %s" % (label, value)
+            item = items[index]
+            if index < len(items) - 1:
+                item = item.ljust(widths[index])
             parts.append(paint(item, style, color) if style else item)
         return [lead + "  ·  ".join(parts)]
     text = key.upper() if uppercase else key
@@ -1480,15 +1490,10 @@ def platform_summary_lines(usage, quota, deepseek, deepseek_hint, subscription_i
         blocks.append(("CODEX", codex_body))
 
     deepseek_block = by_name.get("deepseek")
-    deepseek_block = by_name.get("deepseek")
-    split_lines = (deepseek_split_lines(usage.get("deepseek_split"), inner, color, indent=indent)
-                   if deepseek_block is not None else [])
     deep = group_lines([
         deepseek_balance_lines(deepseek, deepseek_hint, inner, color, usd_cny, indent=indent),
-        summary_lines("cost", cost_pairs(deepseek_block["totals"], deepseek_block["currency"]),
-                      inner, color, indent=indent, accent="today")
-        if deepseek_block is not None else [],
-        split_lines,
+        deepseek_cost_lines(deepseek_block, usage.get("deepseek_split"), inner, color,
+                            indent=indent) if deepseek_block is not None else [],
     ])
     if deep:
         blocks.append(("DEEPSEEK", deep))

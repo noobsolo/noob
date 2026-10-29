@@ -1100,6 +1100,43 @@ class NoobTest(unittest.TestCase):
                       noob.render_home(usage, {}, width=80, deepseek_hint="set DEEPSEEK_API_KEY"))
         self.assertNotIn("DEEPSEEK", noob.render_home(usage, {}, width=80))
 
+    def test_deepseek_cost_rows_share_columns_and_wrap_together(self):
+        for amounts in ((0.66, 4.29, 22.65, 22.65),
+                        (9.99, 10.00, 123.45, 1234.56),
+                        (999.99, 1000.00, 9999.99, 10000.00)):
+            opencode = dict(zip((p for p, _ in noob.PERIODS), amounts))
+            pi = {p: (i + 1) * 0.01 for i, (p, _) in enumerate(noob.PERIODS)}
+            source = {p: {"m": {"estimate_cny": opencode[p] + pi[p]}}
+                      for p, _ in noob.PERIODS}
+            usage = noob.build_usage([("DeepSeek", source)])
+            usage["deepseek_split"] = {"opencode": {"cny": opencode}, "pi": {"cny": pi}}
+            for color in (False, True):
+                for width in (20, 39, 40, *range(75, 101), 120):
+                    with self.subTest(amounts=amounts, color=color, width=width):
+                        rendered = "\n".join(noob.platform_summary_lines(
+                            usage, [], None, None, None, width, color))
+                        plain = noob.ANSI_RE.sub("", rendered)
+                        lines = plain.splitlines()
+                        self.assertLessEqual(max(map(len, lines)), width)
+                        rows = [line for line in lines
+                                if re.search(r"\b(?:COST|opencode|pi)\b", line)]
+                        self.assertEqual(len(rows), 3)
+                        if any("·" in row for row in rows):
+                            positions = [[i for i, ch in enumerate(row) if ch == "·"]
+                                         for row in rows]
+                            self.assertEqual(len(positions[0]), 3)
+                            self.assertEqual(positions, [positions[0]] * 3)
+                            for label in ("today", "week", "month", "all"):
+                                self.assertEqual(len({row.index(label) for row in rows}), 1)
+                        else:
+                            for label in ("today", "week", "month", "all"):
+                                period_rows = [line for line in lines if label in line]
+                                self.assertEqual(len(period_rows), 3)
+                                self.assertEqual(len({line.index(label) for line in period_rows}), 1)
+                        if color:
+                            self.assertIn("\033[92m", rendered)
+                            self.assertIn("\033[2m", rendered)
+
     def test_deepseek_hint_appears_when_no_key_is_set(self):
         class Terminal(io.StringIO):
             def isatty(self):
