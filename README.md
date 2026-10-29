@@ -74,6 +74,40 @@ noob --no-update   # skip the start-up check
 
 Set `NOOB_NO_UPDATE=1` to disable the start-up check from scripts or launchd.
 
+## Local usage history
+
+Costs are not recomputed from the raw logs every launch anymore. `noob` records
+each new token increment in a local append-only ledger, together with the rate
+snapshot that was in effect at that moment:
+
+```
+~/.local/share/noob/usage/events/YYYY-MM.jsonl
+~/.local/share/noob/usage/state.json
+```
+
+A later price change therefore never rewrites an older cost. The ledger also
+keeps history after Codex compresses, archives, or deletes a session, and after
+OpenCode/pi clean up their logs. The first run backfills the logs that still
+exist; those older days are priced with the prices available at backfill time.
+
+The dashboard is unchanged: it aggregates the ledger into the same day/week/
+month/all figures and model list as before.
+
+```sh
+noob --capture-usage   # record new usage, then exit
+noob --export-usage    # capture, then write usage/YYYY-MM.json for a repo backup
+noob --import-usage    # restore an empty local ledger from that backup
+```
+
+`--export-usage` writes sanitised aggregates only: date, platform, model, token
+counts, rate snapshots, and cost. It contains no session IDs, prompts, paths, or
+other private data, so the `usage/` files can be committed. Keep the local
+ledger outside the repository: writing it into the checkout would leave the tree
+dirty and stop the automatic updater.
+
+Nightly `--daily-cards` also records usage, so the schedule created by
+`--install-daily` keeps the history current even when the dashboard is closed.
+
 ## Nightly cards
 
 Capture the home usage card and the models detail card every night at midnight,
@@ -123,6 +157,7 @@ Costs are API-price equivalents for your tokens, not what you were actually bill
 ## Files
 
 - `noob.py` — main dashboard
+- `noob_usage.py` — local priced-usage ledger and repo export
 - `noob_pricing.py` — price tables
 - `noob_card.py` — usage card
 - `noob_reset_card.py` — reset card

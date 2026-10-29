@@ -32,6 +32,8 @@ class NoobTest(unittest.TestCase):
         os.environ.pop("DEEPSEEK_API_KEY", None)
         # Unit tests must never fast-forward the checkout they run from.
         os.environ["NOOB_NO_UPDATE"] = "1"
+        # Keep the tests on the live-scan path; ledger tests set up their own store.
+        os.environ["NOOB_NO_USAGE_CAPTURE"] = "1"
         self.addCleanup(environment.stop)
         # Never let a test read the developer's real macOS Keychain item.
         self.real_keychain_secret = noob.keychain_secret

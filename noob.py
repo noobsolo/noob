@@ -31,6 +31,7 @@ from shape_bar_demos import SHAPE, render_shape
 from noob_card import save_card, save_models_card
 from noob_reset_card import save_reset_card
 from noob_pricing import refresh_prices
+from noob_usage import PERIODS as USAGE_PERIODS, UsageLedger
 
 
 API_BASE = "https://api.openai.com/v1"
@@ -484,6 +485,36 @@ def estimate(model, row, long_context=False):
     output_multiplier = 1.5 if use_multiplier else 1
     return (input_multiplier * (uncached * normal + row["cached"] * (cached or 0) +
             row["write"] * (write or 0)) + output_multiplier * row["output"] * output) / 1_000_000
+
+
+def effective_codex_rates(model, long_context=False):
+    """Effective USD/1M rates for one model, including long-context multipliers."""
+    rates = RATES.get(model)
+    if rates is None:
+        return None
+    normal, cached, write, output = rates
+    if long_context and model in LONG_RATES:
+        normal, cached, write, output = LONG_RATES[model]
+    elif long_context and model in LONG_CONTEXT_MODELS:
+        normal *= 2
+        cached = None if cached is None else cached * 2
+        write = None if write is None else write * 2
+        output *= 1.5
+    return {"input": normal, "cached": cached, "write": write, "output": output,
+            "currency": "USD", "long_context": bool(long_context)}
+
+
+def cost_from_codex_rates(tokens, rates):
+    """USD for a token delta, or None when the rate row cannot price it."""
+    if rates is None:
+        return None
+    cached, write = rates.get("cached"), rates.get("write")
+    if (tokens["cached"] and cached is None) or (tokens["write"] and write is None):
+        return None
+    uncached = max(0, tokens["input"] - tokens["cached"] - tokens["write"])
+    return (uncached * rates["input"] + tokens["cached"] * (cached or 0)
+            + tokens["write"] * (write or 0)
+            + tokens["output"] * rates["output"]) / 1_000_000
 
 
 def empty_local_row():
@@ -1626,6 +1657,462 @@ def render_loading(width=80, color=False):
                       "  " + paint("Loading...", "1;36", color)))
 
 
+# --- local usage ledger -------------------------------------------------
+
+def usage_ledger_enabled():
+    return not os.environ.get("NOOB_NO_USAGE_CAPTURE")
+
+
+def codex_session_roots():
+    root = Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser()
+    return (root / "sessions", root / "archived_sessions")
+
+
+def iter_codex_usage(path):
+    """Yield (timestamp, model, delta, cumulative) for one rollout log."""
+    model = None
+    previous = None
+    with rollout_text(path) as stream:
+        for line in stream:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            payload = entry.get("payload") or {}
+            if entry.get("type") == "turn_context":
+                model = payload.get("model") or model
+                continue
+            if entry.get("type") != "event_msg" or payload.get("type") != "token_count":
+                continue
+            total = (payload.get("info") or {}).get("total_token_usage")
+            if not isinstance(total, dict):
+                continue
+            current = {field: max(0, int(total.get(source) or 0))
+                       for field, source in LOG_FIELDS.items()}
+            if previous is None:
+                delta = current
+            elif any(current[field] < previous[field] for field in TOKEN_FIELDS):
+                previous = current
+                continue
+            else:
+                delta = {field: current[field] - previous[field] for field in TOKEN_FIELDS}
+            previous = current
+            if not any(delta.values()) or model == "codex-auto-review":
+                continue
+            try:
+                stamp = dt.datetime.fromisoformat(
+                    entry["timestamp"].replace("Z", "+00:00")).astimezone()
+            except (KeyError, TypeError, ValueError):
+                continue
+            yield stamp, model or "Unknown model", delta, current
+
+
+def capture_codex_usage(state, now, context, backfill, baseline):
+    """Append Codex deltas that have not been recorded yet."""
+    events = []
+    warnings = []
+    sessions = state["codex"]["sessions"]
+    logs = {}
+    for root in codex_session_roots():
+        if not root.is_dir():
+            continue
+        for path in rollout_logs(root):
+            key = path.name[:-len(".zst")] if path.name.endswith(".zst") else path.name
+            logs.setdefault(key, path)
+    for key, path in sorted(logs.items()):
+        try:
+            info = path.stat()
+        except OSError:
+            continue
+        previous_state = sessions.get(key) or {}
+        if (not baseline and previous_state.get("size") == info.st_size
+                and previous_state.get("mtime_ns") == info.st_mtime_ns):
+            continue
+        watermark = previous_state.get("tokens") or {}
+        final = watermark
+        batches = {}
+        try:
+            for stamp, model, delta, cumulative in iter_codex_usage(path):
+                if stamp > now:
+                    continue
+                final = cumulative
+                if watermark and all(cumulative[field] <= int(watermark.get(field) or 0)
+                                     for field in TOKEN_FIELDS):
+                    continue
+                if baseline:
+                    continue
+                long_context = delta["input"] > 272_000
+                rates = effective_codex_rates(model, long_context)
+                cost = cost_from_codex_rates(delta, rates)
+                day = stamp.date().isoformat()
+                kind = "long" if long_context else "short"
+                batch = batches.setdefault((day, model, kind), {
+                    "tokens": {field: 0 for field in TOKEN_FIELDS},
+                    "cost": 0.0, "unpriced": 0, "calls": 0, "rates": rates,
+                })
+                for field in TOKEN_FIELDS:
+                    batch["tokens"][field] += delta[field]
+                batch["calls"] += 1
+                if cost is None:
+                    batch["unpriced"] += delta["input"] + delta["output"]
+                else:
+                    batch["cost"] += cost
+        except OSError as exc:
+            warnings.append("Could not read Codex session %s: %s" % (path.name, exc))
+            continue
+        sessions[key] = {"size": info.st_size, "mtime_ns": info.st_mtime_ns,
+                         "tokens": final or {}, "updated_at": now.isoformat()}
+        for (day, model, kind), batch in batches.items():
+            snapshot = dict(batch["rates"]) if batch["rates"] else None
+            if snapshot is not None:
+                snapshot["source"] = context["price_source"]
+            events.append({
+                "at": now.isoformat(), "day": day, "platform": "Codex",
+                "source": "codex", "model": model, "display": model,
+                "kind": kind, "tokens": batch["tokens"], "cost": batch["cost"],
+                "currency": "USD", "unpriced": batch["unpriced"],
+                "calls": batch["calls"], "rates": snapshot, "backfill": bool(backfill),
+            })
+    return events, warnings, len(logs)
+
+
+def capture_pi_usage(state, now, context, backfill, baseline):
+    """Append new pi messages, priced with the current DeepSeek table."""
+    events = []
+    warnings = []
+    files = state["pi"]["files"]
+    root = pi_sessions_root()
+    if not root.is_dir():
+        return events, warnings
+    for path in sorted(root.rglob("*.jsonl")):
+        try:
+            info = path.stat()
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        key = str(path)
+        previous = files.get(key) or {}
+        if (not baseline and previous.get("size") == info.st_size
+                and previous.get("mtime_ns") == info.st_mtime_ns):
+            continue
+        start = int(previous.get("lines") or 0)
+        if start > len(lines):
+            start = len(lines)  # A rewritten file: keep the old history and go forward.
+        batches = {}
+        for line in lines[start:]:
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if entry.get("type") != "message":
+                continue
+            message = entry.get("message") or {}
+            if message.get("provider") != "deepseek":
+                continue
+            usage = message.get("usage") or {}
+            if not isinstance(usage, dict):
+                continue
+            try:
+                stamp = dt.datetime.fromisoformat(
+                    entry["timestamp"].replace("Z", "+00:00")).astimezone()
+            except (KeyError, TypeError, ValueError):
+                continue
+            if stamp > now:
+                continue
+            cache_read = max(0, int(usage.get("cacheRead") or 0))
+            cache_write = max(0, int(usage.get("cacheWrite") or 0))
+            input_tokens = max(0, int(usage.get("input") or 0))
+            output_tokens = max(0, int(usage.get("output") or 0))
+            if input_tokens + cache_read + cache_write + output_tokens <= 0:
+                continue
+            model_id = message.get("model") or "deepseek"
+            table = deepseek_rate(context["deepseek_rates"], model_id)
+            peak = deepseek_peak(stamp)
+            cost = None if table is None else deepseek_token_cost(
+                table, input_tokens, cache_read, output_tokens, peak)
+            display = deepseek_version_at(context["versions"], model_id, stamp) or model_id
+            day = stamp.date().isoformat()
+            kind = "peak" if peak else "offpeak"
+            batch = batches.setdefault((day, model_id, display, kind), {
+                "tokens": {field: 0 for field in TOKEN_FIELDS},
+                "cost": 0.0, "unpriced": 0, "calls": 0,
+            })
+            batch["tokens"]["input"] += input_tokens + cache_read + cache_write
+            batch["tokens"]["cached"] += cache_read
+            batch["tokens"]["write"] += cache_write
+            batch["tokens"]["output"] += output_tokens
+            batch["calls"] += 1
+            if cost is None:
+                batch["unpriced"] += input_tokens + output_tokens
+            else:
+                batch["cost"] += cost
+        files[key] = {"size": info.st_size, "mtime_ns": info.st_mtime_ns,
+                      "lines": len(lines), "updated_at": now.isoformat()}
+        for (day, model_id, display, kind), batch in batches.items():
+            if baseline:
+                continue
+            table = deepseek_rate(context["deepseek_rates"], model_id)
+            band = 1 if kind == "peak" else 0
+            snapshot = {"kind": kind, "currency": "CNY",
+                        "source": context["deepseek_source"],
+                        "captured_at": now.isoformat()}
+            if table is not None:
+                snapshot.update({"input": table["cache_miss"][band],
+                                 "cached": table["cache_hit"][band],
+                                 "output": table["output"][band]})
+            cost_cny = batch["cost"]
+            usd_cny = context["usd_cny"]
+            events.append({
+                "at": now.isoformat(), "day": day, "platform": "DeepSeek",
+                "source": "pi", "model": model_id, "display": display,
+                "kind": kind, "tokens": batch["tokens"],
+                "cost_cny": cost_cny, "cost_usd": cost_cny / usd_cny,
+                "usd_cny": usd_cny, "currency": "CNY",
+                "unpriced": batch["unpriced"], "calls": batch["calls"],
+                "rates": snapshot, "backfill": bool(backfill),
+            })
+    return events, warnings
+
+
+def opencode_day_usage(day_start, day_end, timeout=20):
+    """{model: {'peak': row, 'offpeak': row}} for one local day."""
+    def ms(moment):
+        return int(moment.timestamp() * 1000)
+
+    full = opencode_deepseek_tokens(opencode_stats(ms(day_start), ms(day_end), timeout))
+    hot = {}
+    for window in peak_windows(day_start, day_end):
+        rows = opencode_deepseek_tokens(opencode_stats(window[0], window[1], timeout))
+        for model, row in rows.items():
+            target = hot.setdefault(model, empty_local_row())
+            for field in ("input", "cached", "write", "output", "calls"):
+                target[field] += row[field]
+    result = {}
+    for model, row in full.items():
+        peak = hot.get(model) or empty_local_row()
+        offpeak = {field: max(0, row[field] - peak[field])
+                   for field in ("input", "cached", "write", "output", "calls")}
+        result[model] = {"peak": peak, "offpeak": offpeak}
+    return result
+
+
+def capture_opencode_usage(state, now, context, backfill, baseline):
+    """Append per-day OpenCode DeepSeek deltas using a daily high-water mark."""
+    events = []
+    warnings = []
+    if not shutil.which("opencode"):
+        return events, warnings
+    days = state["opencode"]["days"]
+    today = now.date()
+    targets = set()
+    if not days:
+        try:
+            recent = opencode_stats(0, int(now.timestamp() * 1000))
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+            warnings.append("OpenCode usage query failed: %s" % exc)
+            return events, warnings
+        for item in recent.get("activity") or []:
+            try:
+                targets.add(dt.date.fromisoformat(item.get("date")))
+            except (TypeError, ValueError):
+                continue
+        targets.add(today)
+        if not targets:
+            targets.add(today)
+    else:
+        latest = max(dt.date.fromisoformat(day) for day in days)
+        cursor = latest
+        while cursor <= today:
+            targets.add(cursor)
+            cursor += dt.timedelta(days=1)
+    for day in sorted(targets):
+        if day > today:
+            continue
+        day_start = dt.datetime.combine(day, dt.time.min).astimezone()
+        day_end = day_start + dt.timedelta(days=1)
+        if day == today:
+            day_end = min(day_end, now)
+        try:
+            observed = opencode_day_usage(day_start, day_end)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+            warnings.append("OpenCode usage query failed: %s" % exc)
+            continue
+        day_key = day.isoformat()
+        booked = days.setdefault(day_key, {})
+        for model_id, bands in observed.items():
+            display = deepseek_version_at(context["versions"], model_id, day_start) or model_id
+            for kind, row in bands.items():
+                if not any(row[field] for field in TOKEN_FIELDS):
+                    continue
+                key = "%s|%s|%s" % (model_id, display, kind)
+                old = booked.get(key) or {}
+                delta = {field: max(0, row[field] - int(old.get(field) or 0))
+                         for field in TOKEN_FIELDS}
+                booked[key] = {field: max(int(old.get(field) or 0), row[field])
+                               for field in ("input", "cached", "write", "output", "calls")}
+                if baseline or not any(delta.values()):
+                    continue
+                table = deepseek_rate(context["deepseek_rates"], model_id)
+                peak = kind == "peak"
+                cost = None if table is None else deepseek_token_cost(
+                    table, max(0, delta["input"] - delta["cached"] - delta["write"]),
+                    delta["cached"], delta["output"], peak)
+                band = 1 if peak else 0
+                snapshot = {"kind": kind, "currency": "CNY",
+                            "source": context["deepseek_source"],
+                            "captured_at": now.isoformat()}
+                if table is not None:
+                    snapshot.update({"input": table["cache_miss"][band],
+                                     "cached": table["cache_hit"][band],
+                                     "output": table["output"][band]})
+                cost_cny = 0.0 if cost is None else cost
+                usd_cny = context["usd_cny"]
+                events.append({
+                    "at": now.isoformat(), "day": day_key, "platform": "DeepSeek",
+                    "source": "opencode", "model": model_id, "display": display,
+                    "kind": kind, "tokens": delta, "cost_cny": cost_cny,
+                    "cost_usd": cost_cny / usd_cny, "usd_cny": usd_cny,
+                    "currency": "CNY",
+                    "unpriced": (delta["input"] + delta["output"]) if cost is None else 0,
+                    "calls": int(row.get("calls") or 0),
+                    "rates": snapshot, "backfill": bool(backfill),
+                })
+    return events, warnings
+
+
+def usage_context():
+    """Load prices and model labels once for capture and rendering."""
+    warnings = []
+    prices, pricing_note = refresh_prices()
+    if prices:
+        RATES.update(prices["rates"])
+        for model in prices["rates"]:
+            LONG_RATES.pop(model, None)
+        LONG_RATES.update(prices["long_rates"])
+        LONG_CONTEXT_MODELS.difference_update(prices["rates"])
+        LONG_CONTEXT_MODELS.update(prices["long_rates"])
+    if pricing_note is None:
+        price_source = "live"
+    elif prices:
+        price_source = "cached"
+    else:
+        price_source = "fallback"
+    fetched_usd_cny = fetch_usd_cny()
+    usd_cny = fetched_usd_cny or FALLBACK_USD_CNY
+    deepseek_rates = deepseek_prices()
+    deepseek_source = ("fallback" if deepseek_rates == FALLBACK_DEEPSEEK_RATES else "live")
+    versions = load_deepseek_models()
+    deepseek_key = deepseek_api_key()
+    try:
+        if record_deepseek_versions(versions, fetch_deepseek_models(deepseek_key)):
+            save_deepseek_models(versions)
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        warnings.append("DeepSeek model query failed: %s" % exc)
+    return {
+        "price_source": price_source,
+        "pricing_note": pricing_note,
+        "usd_cny": usd_cny,
+        "usd_cny_source": "live" if fetched_usd_cny is not None else "fallback",
+        "deepseek_rates": deepseek_rates,
+        "deepseek_source": deepseek_source,
+        "versions": versions,
+        "deepseek_key": deepseek_key,
+    }, warnings
+
+
+def capture_usage(ledger, context, now=None):
+    """Record every new token increment once; return (warnings, session files)."""
+    now = now or dt.datetime.now().astimezone()
+    warnings = []
+    files = 0
+    if ledger is None:
+        return warnings, files
+    backfill = not ledger.has_events()
+    try:
+        with ledger.transaction() as (state, events):
+            empty_watermarks = not any(state[section][key] for section, key in
+                                       (("codex", "sessions"), ("pi", "files"),
+                                        ("opencode", "days")))
+            baseline = bool(state.get("baseline_only")) or (not backfill and empty_watermarks)
+            codex_events, codex_warnings, files = capture_codex_usage(
+                state, now, context, backfill, baseline)
+            events.extend(codex_events)
+            warnings.extend(codex_warnings)
+            pi_events, pi_warnings = capture_pi_usage(
+                state, now, context, backfill, baseline)
+            events.extend(pi_events)
+            warnings.extend(pi_warnings)
+            opencode_events, opencode_warnings = capture_opencode_usage(
+                state, now, context, backfill, baseline)
+            events.extend(opencode_events)
+            warnings.extend(opencode_warnings)
+            state["baseline_only"] = False
+    except OSError as exc:
+        warnings.append("Usage ledger unavailable: %s" % exc)
+    return warnings, files
+
+
+def ledger_usage_sources(ledger, now, files=0):
+    codex_rows = ledger.period_rows("Codex", now)
+    deepseek_rows = ledger.period_rows("DeepSeek", now)
+    sources = []
+    if files or any(codex_rows[period] for period in USAGE_PERIODS):
+        codex_rows["files"] = files
+        sources.append(("Codex", codex_rows))
+    if any(deepseek_rows[period] for period in USAGE_PERIODS):
+        sources.append(("DeepSeek", deepseek_rows))
+    return sources
+
+
+def live_usage_sources(context, warnings):
+    sources = []
+    try:
+        sources.append(("Codex", scan_local_sessions()))
+    except OSError as exc:
+        warnings.append("Could not read local session logs: %s" % exc)
+    opencode_rows = None
+    pi_rows = None
+    deepseek_sources = []
+    if shutil.which("opencode"):
+        try:
+            opencode_rows = opencode_usage(
+                rates=context["deepseek_rates"], usd_cny=context["usd_cny"],
+                versions=context["versions"])
+            deepseek_sources.append(opencode_rows)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+            warnings.append("OpenCode usage query failed: %s" % exc)
+    try:
+        pi_rows = pi_usage(usd_cny=context["usd_cny"], versions=context["versions"],
+                           rates=context["deepseek_rates"])
+        deepseek_sources.append(pi_rows)
+    except (OSError, RuntimeError, ValueError) as exc:
+        warnings.append("pi usage query failed: %s" % exc)
+    if deepseek_sources:
+        sources.append(("DeepSeek", merge_deepseek_usage(*deepseek_sources)))
+    return sources, opencode_rows, pi_rows
+
+
+def collect_usage(context, warnings, ledger=None, now=None):
+    """Read the ledger, falling back to live logs when it has no data yet."""
+    now = now or dt.datetime.now().astimezone()
+    opencode_rows = None
+    pi_rows = None
+    if ledger is not None:
+        capture_warnings, files = capture_usage(ledger, context, now)
+        warnings.extend(capture_warnings)
+        if ledger.has_events():
+            sources = ledger_usage_sources(ledger, now, files)
+            opencode_rows = ledger.period_rows("DeepSeek", now, source="opencode")
+            pi_rows = ledger.period_rows("DeepSeek", now, source="pi")
+            usage = build_usage(sources)
+            usage["deepseek_split"] = deepseek_split_costs(opencode_rows, pi_rows)
+            return usage
+    sources, opencode_rows, pi_rows = live_usage_sources(context, warnings)
+    usage = build_usage(sources)
+    usage["deepseek_split"] = deepseek_split_costs(opencode_rows, pi_rows)
+    return usage
+
+
 DAILY_LABEL = "com.noob.dailycards"
 DAILY_LOG = "Library/Logs/noob-daily.log"
 LAUNCH_AGENT = "Library/LaunchAgents/%s.plist" % DAILY_LABEL
@@ -1644,61 +2131,24 @@ def daily_cards(directory=None, now=None):
     directory = daily_cards_dir(directory)
     stamp = now.strftime("%Y%m%d")
     warnings = []
-    prices, _ = refresh_prices()
-    if prices:
-        RATES.update(prices["rates"])
-        for model in prices["rates"]:
-            LONG_RATES.pop(model, None)
-        LONG_RATES.update(prices["long_rates"])
-        LONG_CONTEXT_MODELS.difference_update(prices["rates"])
-        LONG_CONTEXT_MODELS.update(prices["long_rates"])
-    usd_cny = fetch_usd_cny() or FALLBACK_USD_CNY
-    deepseek_rates = deepseek_prices()
-    versions = load_deepseek_models()
-    deepseek_key = deepseek_api_key()
-    try:
-        if record_deepseek_versions(versions, fetch_deepseek_models(deepseek_key)):
-            save_deepseek_models(versions)
-    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
-        warnings.append("DeepSeek model query failed: %s" % exc)
-    sources = []
-    try:
-        sources.append(("Codex", scan_local_sessions()))
-    except OSError as exc:
-        warnings.append("Could not read local session logs: %s" % exc)
-    opencode_rows = None
-    pi_rows = None
-    deepseek_sources = []
-    if shutil.which("opencode"):
-        try:
-            opencode_rows = opencode_usage(
-                rates=deepseek_rates, usd_cny=usd_cny, versions=versions)
-            deepseek_sources.append(opencode_rows)
-        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
-            warnings.append("OpenCode usage query failed: %s" % exc)
-    try:
-        pi_rows = pi_usage(usd_cny=usd_cny, versions=versions, rates=deepseek_rates)
-        deepseek_sources.append(pi_rows)
-    except (OSError, RuntimeError, ValueError) as exc:
-        warnings.append("pi usage query failed: %s" % exc)
-    if deepseek_sources:
-        sources.append(("DeepSeek", merge_deepseek_usage(*deepseek_sources)))
-    usage = build_usage(sources)
-    usage["deepseek_split"] = deepseek_split_costs(opencode_rows, pi_rows)
+    context, context_warnings = usage_context()
+    warnings.extend(context_warnings)
+    ledger = UsageLedger() if usage_ledger_enabled() else None
+    usage = collect_usage(context, warnings, ledger=ledger, now=now)
     try:
         limits = codex_data()
     except (OSError, RuntimeError, ValueError) as exc:
         limits = {}
         warnings.append("Codex quota query failed: %s" % exc)
     balance = None
-    if deepseek_key:
+    if context["deepseek_key"]:
         try:
-            balance = deepseek_balance(deepseek_key)
+            balance = deepseek_balance(context["deepseek_key"])
         except (RuntimeError, ValueError) as exc:
             warnings.append("DeepSeek balance query failed: %s" % exc)
     paths = [
         save_card(usage, directory=directory, now=now, quotas=card_quotas(limits),
-                  deepseek=deepseek_money_text(balance, usd_cny),
+                  deepseek=deepseek_money_text(balance, context["usd_cny"]),
                   name="noobsolo-usage-%s.png" % stamp),
         save_models_card(usage, directory=directory, now=now, sort_period="month",
                          sort_desc=True, name="noobsolo-models-%s.png" % stamp),
@@ -1967,6 +2417,12 @@ def main(argv=None):
                         help="capture the cards every night at HH:MM via launchd (default 00:00)")
     parser.add_argument("--uninstall-daily", action="store_true",
                         help="remove the nightly capture schedule")
+    parser.add_argument("--capture-usage", action="store_true",
+                        help="record new local usage, then exit")
+    parser.add_argument("--export-usage", action="store_true",
+                        help="capture usage and write the daily repo backup, then exit")
+    parser.add_argument("--import-usage", action="store_true",
+                        help="restore an empty local ledger from the repo backup, then exit")
     args = parser.parse_args(argv)
     if args.update:
         result = check_for_update()
@@ -1977,6 +2433,33 @@ def main(argv=None):
     update_notice = os.environ.pop(UPDATE_NOTICE_ENV, None)
     if update_notice and not sys.stdout.isatty():
         print(update_notice, file=sys.stderr)
+    if args.import_usage:
+        ledger = UsageLedger()
+        try:
+            events = ledger.import_repo(Path(__file__).resolve().parent)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print("Could not import usage history: %s" % exc, file=sys.stderr)
+            return 1
+        print("Imported %d daily usage entries into %s" % (len(events), ledger.directory))
+        return 0
+    if args.capture_usage or args.export_usage:
+        context, capture_warnings = usage_context()
+        ledger = UsageLedger()
+        more_warnings, files = capture_usage(ledger, context)
+        for warning in capture_warnings + more_warnings:
+            print("warning: %s" % warning, file=sys.stderr)
+        if args.export_usage:
+            try:
+                paths = ledger.export_repo(Path(__file__).resolve().parent)
+            except OSError as exc:
+                print("Could not export usage history: %s" % exc, file=sys.stderr)
+                return 1
+            for path in paths:
+                print("Exported: %s" % path)
+        else:
+            print("Captured usage from %d Codex session files into %s"
+                  % (files, ledger.directory))
+        return 0
     if args.uninstall_daily:
         destination = uninstall_daily_schedule()
         print("Removed nightly capture: %s" % destination)
@@ -2018,24 +2501,15 @@ def main(argv=None):
     try:
         with interactive_mouse(watch) as input_fd:
             input_parser = TerminalInput()
-            prices, pricing_note = refresh_prices()
-            if prices:
-                RATES.update(prices["rates"])
-                for model in prices["rates"]:
-                    LONG_RATES.pop(model, None)
-                LONG_RATES.update(prices["long_rates"])
-                LONG_CONTEXT_MODELS.difference_update(prices["rates"])
-                LONG_CONTEXT_MODELS.update(prices["long_rates"])
-            deepseek_key = deepseek_api_key()
-            usd_cny = fetch_usd_cny() or FALLBACK_USD_CNY
-            deepseek_rates = deepseek_prices()
-            deepseek_versions = load_deepseek_models()
-            if record_deepseek_versions(deepseek_versions, fetch_deepseek_models(deepseek_key)):
-                save_deepseek_models(deepseek_versions)
+            context, context_warnings = usage_context()
+            pricing_note = context["pricing_note"]
+            deepseek_key = context["deepseek_key"]
+            usd_cny = context["usd_cny"]
+            ledger = UsageLedger() if usage_ledger_enabled() else None
             last_day = dt.date.today()
             while True:
                 started = time.monotonic()
-                warnings = []
+                warnings = list(context_warnings) if first_query else []
                 limits = {}
                 try:
                     limits = codex_data()
@@ -2044,31 +2518,7 @@ def main(argv=None):
                 except (OSError, RuntimeError, ValueError) as exc:
                     warnings.append("Codex quota query failed: %s" % exc)
                 first_query = False
-                sources = []
-                try:
-                    sources.append(("Codex", scan_local_sessions()))
-                except OSError as exc:
-                    warnings.append("Could not read local session logs: %s" % exc)
-                opencode_rows = None
-                pi_rows = None
-                deepseek_sources = []
-                if shutil.which("opencode"):
-                    try:
-                        opencode_rows = opencode_usage(
-                            rates=deepseek_rates, usd_cny=usd_cny, versions=deepseek_versions)
-                        deepseek_sources.append(opencode_rows)
-                    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
-                        warnings.append("OpenCode usage query failed: %s" % exc)
-                try:
-                    pi_rows = pi_usage(usd_cny=usd_cny, versions=deepseek_versions,
-                                       rates=deepseek_rates)
-                    deepseek_sources.append(pi_rows)
-                except (OSError, RuntimeError, ValueError) as exc:
-                    warnings.append("pi usage query failed: %s" % exc)
-                if deepseek_sources:
-                    sources.append(("DeepSeek", merge_deepseek_usage(*deepseek_sources)))
-                usage = build_usage(sources)
-                usage["deepseek_split"] = deepseek_split_costs(opencode_rows, pi_rows)
+                usage = collect_usage(context, warnings, ledger=ledger)
                 api = None
                 if api_requested:
                     key = os.environ.get("OPENAI_ADMIN_KEY")
@@ -2135,31 +2585,10 @@ def main(argv=None):
                             redraw()
                             return
 
-                def fresh_sources():
-                    collected = []
-                    opencode_rows = None
-                    pi_rows = None
-                    deepseek_sources = []
-                    try:
-                        collected.append(("Codex", scan_local_sessions()))
-                    except OSError:
-                        pass
-                    if shutil.which("opencode"):
-                        try:
-                            opencode_rows = opencode_usage(
-                                rates=deepseek_rates, usd_cny=usd_cny, versions=deepseek_versions)
-                            deepseek_sources.append(opencode_rows)
-                        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
-                            pass
-                    try:
-                        pi_rows = pi_usage(usd_cny=usd_cny, versions=deepseek_versions,
-                                           rates=deepseek_rates)
-                        deepseek_sources.append(pi_rows)
-                    except (OSError, RuntimeError, ValueError):
-                        pass
-                    if deepseek_sources:
-                        collected.append(("DeepSeek", merge_deepseek_usage(*deepseek_sources)))
-                    return collected, deepseek_split_costs(opencode_rows, pi_rows)
+                def fresh_usage():
+                    nonlocal usage
+                    usage = collect_usage(context, warnings, ledger=ledger)
+                    return usage.get("deepseek_split")
 
                 def save_image():
                     nonlocal usage, limits, save_notice
@@ -2170,9 +2599,7 @@ def main(argv=None):
                         image_limits = {}
                         warnings.append("Could not refresh Codex quota for image: %s" % exc)
                     try:
-                        collected, split = fresh_sources()
-                        usage = build_usage(collected)
-                        usage["deepseek_split"] = split
+                        fresh_usage()
                         path = save_card(usage, quotas=card_quotas(image_limits),
                                          deepseek=deepseek_money_text(deepseek, usd_cny))
                         save_notice = "Saved image: %s" % path
