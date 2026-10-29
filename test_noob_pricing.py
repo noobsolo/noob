@@ -24,6 +24,20 @@ TABLE = """# Pricing
 """
 
 
+NEW_TABLE = """# Pricing
+### Standard pricing data
+| Model | Short context input | Short context output | Short context cached input | Short context 30m write | Short context 12h write | Long context input | Long context output | Long context cached input | Long context 30m write | Long context 12h write |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| gpt-6.1-terra | $1.00 | $5.00 | $0.05 | $1.25 | $2.50 | $2.00 | $7.50 | $0.10 | $2.50 | $5.00 |
+| gpt-5.5 (<272K context length) | $5.00 | $30.00 | $0.50 | - | - | $10.00 | $45.00 | $1.00 | - | - |
+
+| Model | Input | Output | Cached input |
+| --- | --- | --- | --- |
+| gpt-4o | $2.50 | $10.00 | $1.25 |
+| gpt-4o-mini | $0.15 | $0.60 | $0.075 |
+"""
+
+
 def snapshot():
     rates, long_rates = pricing.parse_prices(TABLE)
     return {"version": 1, "source": pricing.PRICING_URL,
@@ -46,6 +60,29 @@ class PricingTest(unittest.TestCase):
                      TABLE.replace("$3.00 | $0.15", "$3.00")):
             with self.subTest(page=page[:70]), self.assertRaises(ValueError):
                 pricing.parse_prices(page)
+
+    def test_reordered_columns_and_split_tables_still_parse(self):
+        rates, long_rates = pricing.parse_prices(NEW_TABLE)
+        # New model family is picked up without a code change, 30m write is billed.
+        self.assertEqual(rates["gpt-6.1-terra"], (1.0, 0.05, 1.25, 5.0))
+        self.assertEqual(long_rates["gpt-6.1-terra"], (2.0, 0.1, 2.5, 7.5))
+        # Cacheless rows keep their long-context rates and no write price.
+        self.assertEqual(rates["gpt-5.5"], (5.0, 0.5, None, 30.0))
+        self.assertEqual(long_rates["gpt-5.5"], (10.0, 1.0, None, 45.0))
+        # The second, four-column table is priced without cache writes.
+        self.assertEqual(rates["gpt-4o"], (2.5, 1.25, None, 10.0))
+        self.assertEqual(rates["gpt-4o-mini"], (0.15, 0.075, None, 0.6))
+        self.assertNotIn("gpt-4o", long_rates)
+
+    def test_unrelated_tables_are_ignored_instead_of_failing(self):
+        page = NEW_TABLE + """
+| Model | Batch input | Batch output |
+| --- | --- | --- |
+| gpt-4o | $1.25 | $5.00 |
+"""
+        rates, _ = pricing.parse_prices(page)
+        self.assertIn("gpt-6.1-terra", rates)
+        self.assertEqual(rates["gpt-4o"], (2.5, 1.25, None, 10.0))
 
     def test_fetch_uses_public_page_and_bounded_timeout(self):
         with mock.patch.object(pricing.urllib.request, "urlopen") as open_page:
