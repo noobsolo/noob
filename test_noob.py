@@ -92,16 +92,19 @@ class NoobTest(unittest.TestCase):
         narrow_lines = narrow.splitlines()
         wide_row = next(i for i, line in enumerate(wide_lines) if "5H" in line and "▰" in line)
         narrow_bar = next(i for i, line in enumerate(narrow_lines) if "▰" in line)
-        # The arrow marks the fraction of the 32-cell bar's time left (50% -> 16).
+        # Quota bars top out at 20 cells, so a half-used window fills 10 of them,
+        # and the arrow marks the fraction of the bar's time left (50% -> 10).
+        self.assertEqual(wide_lines[wide_row].count("▰") + wide_lines[wide_row].count("▱"),
+                         noob.QUOTA_BAR_CELLS)
         self.assertEqual(wide_lines[wide_row + 1].index("↑")
-                         - wide_lines[wide_row].index("▰"), 16)
+                         - wide_lines[wide_row].index("▰"), 10)
         self.assertEqual(narrow_lines[narrow_bar + 1], " " * 10 + "↑")
         self.assertNotIn("\u20dd", wide)
         self.assertNotIn("\u20dd", narrow)
         with mock.patch.object(noob.time, "time", return_value=now):
             colored = noob.render_home(usage, limits, width=80, color=True)
-        self.assertIn("\033[1;38;2;46;139;87m" + " " * 23 + "↑\033[0m", colored)
-        self.assertNotIn("\033[1;33m" + " " * 23 + "↑", colored)
+        self.assertIn("\033[1;38;2;46;139;87m" + " " * 17 + "↑\033[0m", colored)
+        self.assertNotIn("\033[1;33m" + " " * 17 + "↑", colored)
 
     def test_model_totals_and_reference_estimate(self):
         buckets = [{"results": [{"model": "gpt-5.6-terra", "input_tokens": 1_000_000,
@@ -206,6 +209,8 @@ class NoobTest(unittest.TestCase):
         self.assertIn("\033[31m▰", noob.bar(19, 10, color=True))
 
     def test_fixed_bar_keeps_terminal_column_width(self):
+        self.assertEqual(len(noob.bar(100)), noob.QUOTA_BAR_CELLS)
+        self.assertEqual(len(noob.bar(0)), noob.QUOTA_BAR_CELLS)
         for width in (8, 14, 17, 20):
             with self.subTest(width=width):
                 result = noob.bar(58, width)

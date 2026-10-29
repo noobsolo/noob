@@ -978,11 +978,16 @@ def deepseek_split_lines(split, width, color, indent=4):
     return lines
 
 
+# Every quota bar uses at most this many cells; the fill is proportional to the
+# percentage left, so each cell is worth 5%.
+QUOTA_BAR_CELLS = 20
+
+
 def quota_tone(remaining):
     return "32" if remaining >= 60 else "33" if remaining >= 20 else "31"
 
 
-def bar(remaining, width=24, color=False):
+def bar(remaining, width=QUOTA_BAR_CELLS, color=False):
     return render_shape(SHAPE, remaining, width=width, color=color)
 
 
@@ -1295,7 +1300,7 @@ def quota_lines(rows, width, color, indent=2, now_ts=None):
         remaining = round(100 - used)
         percent = paint("%3d%% left" % remaining, "1;" + quota_tone(remaining), color)
         if width < 32:
-            bar_width = min(14, max(4, width - indent - 2))
+            bar_width = min(QUOTA_BAR_CELLS, max(4, width - indent - 2))
             lines.append("%s%s  %s" % (pad, clipped(label, max(4, width - indent - 12)), percent))
             lines.append("%s%s" % (pad, bar(remaining, bar_width, color)))
             marker = pace_marker(minutes, reset, bar_width, now_ts)
@@ -1304,7 +1309,7 @@ def quota_lines(rows, width, color, indent=2, now_ts=None):
             lines.append("%sreset %s" % (pad, clipped(when(reset), max(6, width - indent - 7))))
         elif width < 68:
             width_limit = min(max(label_w, 4), max(4, width - indent - 12))
-            bar_width = min(24, max(8, width - indent - width_limit - 20))
+            bar_width = min(QUOTA_BAR_CELLS, max(8, width - indent - width_limit - 20))
             lines.append("%s%-*s %s" % (pad, width_limit, clipped(label, width_limit), percent))
             lines.append("%s%s  reset %s" % (pad, bar(remaining, bar_width, color), when(reset)))
             marker = pace_marker(minutes, reset, bar_width, now_ts)
@@ -1312,7 +1317,7 @@ def quota_lines(rows, width, color, indent=2, now_ts=None):
                 lines.append(paint(" " * (indent + marker) + PACE_MARKER, PACE_MARKER_COLOR, color))
         else:
             width_limit = max(label_w, 4)
-            bar_width = min(32, max(8, width - indent - width_limit - 32))
+            bar_width = min(QUOTA_BAR_CELLS, max(8, width - indent - width_limit - 32))
             bar_start = indent + width_limit + 1
             lines.append("%s%-*s %s  %s  reset %s" %
                          (pad, width_limit, clipped(label, width_limit),
