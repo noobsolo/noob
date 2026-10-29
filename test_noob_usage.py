@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import noob
+import noob_usage
 from noob_usage import UsageLedger, empty_state
 
 
@@ -95,34 +96,13 @@ class LedgerTest(unittest.TestCase):
             self.assertEqual(rows["month"]["gpt-6.1-sol"]["estimate"], 14.0)
             self.assertEqual(rows["all"]["gpt-6.1-sol"]["estimate"], 15.0)
 
-    def test_export_and_import_roundtrip_without_private_fields(self):
-        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as repo:
-            ledger = UsageLedger(tmp)
-            with ledger.transaction() as (state, events):
-                events.extend([
-                    codex_event("2026-10-28", cost=1.0),
-                    codex_event("2026-10-28", cost=1.0),
-                    deepseek_event("2026-10-28", source="pi"),
-                ])
-            paths = ledger.export_repo(repo)
-            self.assertEqual([path.name for path in paths], ["2026-10.json"])
-            text = paths[0].read_text(encoding="utf-8")
-            self.assertNotIn("session", text)
-            self.assertNotIn("rollout", text)
-            payload = json.loads(text)
-            entries = payload["days"]["2026-10-28"]
-            codex = next(entry for entry in entries.values() if entry["platform"] == "Codex")
-            self.assertEqual(codex["tokens"]["input"], 2000)
-            self.assertEqual(codex["cost"], 2.0)
-            self.assertEqual(len(codex["rates"]), 1)
-
-            restored = UsageLedger(Path(repo) / "restored")
-            restored.import_repo(repo)
-            self.assertEqual(restored.aggregate(NOW)["Codex"]["all"]["gpt-6.1-sol"]["estimate"],
-                             2.0)
-            self.assertGreaterEqual(len(restored.read_events()), 2)
-            with self.assertRaises(RuntimeError):
-                restored.import_repo(repo)
+    def test_default_ledger_is_local_and_gitignored(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NOOB_USAGE_DIR", None)
+            ledger = UsageLedger()
+        root = Path(noob_usage.__file__).resolve().parent
+        self.assertEqual(ledger.directory, root / "usage")
+        self.assertIn("usage/", (root / ".gitignore").read_text(encoding="utf-8"))
 
 
 class CodexCaptureTest(unittest.TestCase):
