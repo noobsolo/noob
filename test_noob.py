@@ -666,9 +666,46 @@ class NoobTest(unittest.TestCase):
             noob.wait_for_refresh(103.0, 80, False)
 
         self.assertEqual(terminal.getvalue(),
-                         "\033[1A\r\033[2K  Refresh in 2s · Ctrl-C to exit\n"
-                         "\033[1A\r\033[2K  Refresh in 1s · Ctrl-C to exit\n")
+                         "".join("\033[1A\r\033[2K%s\n" % noob.countdown_line(seconds, 80, False)
+                                 for seconds in (2, 1)))
         self.assertEqual(clock[0], 103.0)
+
+    def test_version_badge_sits_in_the_bottom_right(self):
+        usage = noob.build_usage([])
+        for width in (20, 40, 80):
+            with self.subTest(width=width):
+                plain = noob.render_home(usage, {}, width=width, watch=True, refresh_in=58)
+                footer = plain.splitlines()[-1]
+                self.assertEqual(len(footer), width)
+                self.assertTrue(footer.endswith("v" + noob.VERSION))
+                once = noob.render_home(usage, {}, width=width)
+                self.assertEqual(len(once.splitlines()[-1]), width)
+                self.assertTrue(once.splitlines()[-1].endswith("v" + noob.VERSION))
+        colored = noob.render_home(usage, {}, width=80, watch=True, refresh_in=58, color=True)
+        self.assertIn("\033[2mv%s\033[0m" % noob.VERSION, colored.splitlines()[-1])
+        updated = noob.render_home(usage, {}, width=80, watch=True, refresh_in=58,
+                                   color=True, new_version=True)
+        self.assertIn("\033[1;92mv%s\033[0m" % noob.VERSION, updated.splitlines()[-1])
+
+    def test_installed_update_greens_the_version_badge_instead_of_a_notice(self):
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+
+        terminal = Terminal()
+        notice = "noob updated: 1111111 -> 2222222 (2 new commits)"
+        with mock.patch.dict(os.environ, {noob.UPDATE_NOTICE_ENV: notice}), \
+             mock.patch.object(noob.sys, "stdout", terminal), \
+             mock.patch.object(noob, "codex_data", return_value={}), \
+             mock.patch.object(noob, "scan_local_sessions", return_value={}), \
+             mock.patch.object(noob, "wait_for_refresh", side_effect=KeyboardInterrupt) as wait:
+            self.assertEqual(noob.main([]), 0)
+        output = terminal.getvalue()
+        self.assertNotIn("noob updated", output)
+        self.assertNotIn("new commits", output)
+        self.assertIn("\033[1;92mv%s\033[0m" % noob.VERSION, output)
+        self.assertEqual(wait.call_args.kwargs["new_version"], True)
+        self.assertNotIn(noob.UPDATE_NOTICE_ENV, os.environ)
 
     def test_ctrl_c_during_loading_exits_cleanly(self):
         class Terminal(io.StringIO):

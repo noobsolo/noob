@@ -34,6 +34,12 @@ from noob_pricing import refresh_prices
 from noob_usage import PERIODS as USAGE_PERIODS, UsageLedger
 
 
+# Release version, shown at the bottom-right of the dashboard. Every change
+# bumps the middle number unless the request says otherwise:
+# 0.1.0 -> 0.2.0 -> 0.3.0 ...
+VERSION = "0.1.0"
+
+
 API_BASE = "https://api.openai.com/v1"
 # Standard, short-context text rates in USD / million tokens, checked 2026-09-23.
 # GPT-6.1 Sol added from its official model page on 2026-10-09.
@@ -1087,12 +1093,36 @@ def money(value):
     return "<$0.01" if 0 < value < 0.005 else "$%.2f" % value
 
 
-def countdown_line(seconds, width=80, color=False):
+def version_tag(new_version=False, color=False):
+    """The `vX.Y.Z` badge: dim by default, green right after an update."""
+    return paint("v" + VERSION, "1;92" if new_version else "2", color)
+
+
+def version_footer(label, width, color, new_version=False):
+    """Put the version badge at the right edge of `label`'s line."""
+    tag = "v" + VERSION
+    room = width - len(ANSI_RE.sub("", label)) - len(tag)
+    if room < 1:
+        return " " * max(0, width - len(tag)) + version_tag(new_version, color)
+    body = paint(label, "2", color) if label else ""
+    return body + " " * room + version_tag(new_version, color)
+
+
+def version_line(width, color, new_version=False):
+    """A version-only line, right-aligned, for screens without a footer."""
+    return version_footer("", width, color, new_version)
+
+
+def countdown_line(seconds, width=80, color=False, new_version=False):
     label = "Refresh in %ds" % seconds
     detail = " · Ctrl-C to exit"
     if len(label) + len(detail) + 2 < width:
         label += detail
-    return paint("  " + label, "2", color)
+    candidates = ["  " + label, "  Refresh %ds" % seconds]
+    for candidate in candidates:
+        if len(candidate) + len(VERSION) + 2 <= width:
+            return version_footer(candidate, width, color, new_version)
+    return version_line(width, color, new_version)
 
 
 def reset_banner(credits, width=80, color=False):
@@ -1189,7 +1219,8 @@ class TerminalInput:
 
 
 def wait_for_refresh(deadline, width, color, input_fd=None, on_click=None,
-                     on_save_key=None, on_reset_key=None, on_models_key=None, input_parser=None):
+                     on_save_key=None, on_reset_key=None, on_models_key=None, input_parser=None,
+                     new_version=False):
     seconds = max(0, math.ceil(deadline - time.monotonic()))
     input_parser = input_parser if input_parser is not None else TerminalInput()
     while seconds > 0:
@@ -1212,7 +1243,8 @@ def wait_for_refresh(deadline, width, color, input_fd=None, on_click=None,
                         on_models_key()
         updated = max(0, math.ceil(deadline - time.monotonic()))
         if updated != seconds and updated > 0:
-            sys.stdout.write("\033[1A\r\033[2K" + countdown_line(updated, width, color) + "\n")
+            sys.stdout.write("\033[1A\r\033[2K" + countdown_line(updated, width, color,
+                                                                 new_version) + "\n")
             sys.stdout.flush()
         seconds = updated
 
@@ -1544,7 +1576,7 @@ def models_lines(usage, width, color, sort_period, sort_desc, mouse_enabled, mou
 def render_home(usage, limits, api=None, color=False, width=80, warnings=(), watch=False,
                 refresh_in=60, mouse_enabled=False, mouse_targets=None,
                 reset_credits=None, save_notice=None, subscription_info=None, pricing_note=None,
-                deepseek=None, deepseek_hint=None, usd_cny=FALLBACK_USD_CNY):
+                deepseek=None, deepseek_hint=None, usd_cny=FALLBACK_USD_CNY, new_version=False):
     width = max(20, width)
     if mouse_targets is not None:
         mouse_targets.clear()
@@ -1621,13 +1653,15 @@ def render_home(usage, limits, api=None, color=False, width=80, warnings=(), wat
     if watch:
         hint = "  K: models · S: card · M: reset card"
         lines.append(paint(hint if len(hint) <= width else "  K · S · M", "2", color))
-        lines.append(countdown_line(refresh_in, width, color))
+        lines.append(countdown_line(refresh_in, width, color, new_version))
+    else:
+        lines.append(version_line(width, color, new_version))
     return "\n".join(lines)
 
 
 def render_models(usage, color=False, width=80, warnings=(), watch=False, refresh_in=60,
                   sort_period="day", sort_desc=True, mouse_enabled=False, mouse_targets=None,
-                  save_notice=None, pricing_note=None):
+                  save_notice=None, pricing_note=None, new_version=False):
     width = max(20, width)
     if mouse_targets is not None:
         mouse_targets.clear()
@@ -1652,7 +1686,7 @@ def render_models(usage, color=False, width=80, warnings=(), watch=False, refres
     if watch:
         hint = "  K: back · S: models card"
         lines.append(paint(hint if len(hint) <= width else "  K · S", "2", color))
-        lines.append(countdown_line(refresh_in, width, color))
+        lines.append(countdown_line(refresh_in, width, color, new_version))
     return "\n".join(lines)
 
 
@@ -2476,7 +2510,10 @@ def main(argv=None):
     view = "home"
     reset_credits = None
     subscription_info = load_subscription_info()
-    save_notice = update_notice
+    save_notice = None
+    # A launch-time update was just installed: light the version badge instead of
+    # printing the old "noob updated: ..." line into the dashboard.
+    new_version = bool(update_notice)
     first_query = True
     if interactive:
         sys.stdout.write("\033[H\033[J" + render_loading(width, color) + "\n")
@@ -2535,13 +2572,14 @@ def main(argv=None):
                                              sort_period=sort_period, sort_desc=sort_desc,
                                              mouse_enabled=input_fd is not None,
                                              mouse_targets=mouse_targets, save_notice=save_notice,
-                                             pricing_note=pricing_note)
+                                             pricing_note=pricing_note, new_version=new_version)
                     return render_home(usage, limits, api, color=color, width=display_width,
                                        warnings=warnings, watch=watch, refresh_in=refresh_in,
                                        mouse_enabled=input_fd is not None, mouse_targets=mouse_targets,
                                        reset_credits=reset_credits, save_notice=save_notice,
                                        subscription_info=subscription_info, pricing_note=pricing_note,
-                                       deepseek=deepseek, deepseek_hint=deepseek_hint, usd_cny=usd_cny)
+                                       deepseek=deepseek, deepseek_hint=deepseek_hint, usd_cny=usd_cny,
+                                       new_version=new_version)
 
                 def redraw():
                     nonlocal current_output, current_width
@@ -2636,7 +2674,7 @@ def main(argv=None):
                                  on_click=sort_on_click,
                                  on_save_key=save_current, on_reset_key=save_reset_image,
                                  on_models_key=toggle_models,
-                                 input_parser=input_parser)
+                                 input_parser=input_parser, new_version=new_version)
     except KeyboardInterrupt:
         if interactive:
             print()
