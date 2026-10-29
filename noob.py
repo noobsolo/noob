@@ -2419,10 +2419,6 @@ def main(argv=None):
                         help="remove the nightly capture schedule")
     parser.add_argument("--capture-usage", action="store_true",
                         help="record new local usage, then exit")
-    parser.add_argument("--export-usage", action="store_true",
-                        help="capture usage and write the daily repo backup, then exit")
-    parser.add_argument("--import-usage", action="store_true",
-                        help="restore an empty local ledger from the repo backup, then exit")
     args = parser.parse_args(argv)
     if args.update:
         result = check_for_update()
@@ -2433,32 +2429,14 @@ def main(argv=None):
     update_notice = os.environ.pop(UPDATE_NOTICE_ENV, None)
     if update_notice and not sys.stdout.isatty():
         print(update_notice, file=sys.stderr)
-    if args.import_usage:
-        ledger = UsageLedger()
-        try:
-            events = ledger.import_repo(Path(__file__).resolve().parent)
-        except (OSError, RuntimeError, ValueError) as exc:
-            print("Could not import usage history: %s" % exc, file=sys.stderr)
-            return 1
-        print("Imported %d daily usage entries into %s" % (len(events), ledger.directory))
-        return 0
-    if args.capture_usage or args.export_usage:
+    if args.capture_usage:
         context, capture_warnings = usage_context()
         ledger = UsageLedger()
         more_warnings, files = capture_usage(ledger, context)
         for warning in capture_warnings + more_warnings:
             print("warning: %s" % warning, file=sys.stderr)
-        if args.export_usage:
-            try:
-                paths = ledger.export_repo(Path(__file__).resolve().parent)
-            except OSError as exc:
-                print("Could not export usage history: %s" % exc, file=sys.stderr)
-                return 1
-            for path in paths:
-                print("Exported: %s" % path)
-        else:
-            print("Captured usage from %d Codex session files into %s"
-                  % (files, ledger.directory))
+        print("Captured usage from %d Codex session files into %s"
+              % (files, ledger.directory))
         return 0
     if args.uninstall_daily:
         destination = uninstall_daily_schedule()

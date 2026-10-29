@@ -5,3 +5,6 @@ __pycache__/
 
 # runtime cache written next to the program
 pricing_cache.json
+
+# private local usage ledger (tokens, prices, capture watermarks)
+usage/

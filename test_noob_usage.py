@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import noob
+import noob_usage
 from noob_usage import UsageLedger, empty_state
 
 
@@ -95,34 +96,31 @@ class LedgerTest(unittest.TestCase):
             self.assertEqual(rows["month"]["gpt-6.1-sol"]["estimate"], 14.0)
             self.assertEqual(rows["all"]["gpt-6.1-sol"]["estimate"], 15.0)
 
-    def test_export_and_import_roundtrip_without_private_fields(self):
-        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as repo:
-            ledger = UsageLedger(tmp)
-            with ledger.transaction() as (state, events):
-                events.extend([
-                    codex_event("2026-10-28", cost=1.0),
-                    codex_event("2026-10-28", cost=1.0),
-                    deepseek_event("2026-10-28", source="pi"),
-                ])
-            paths = ledger.export_repo(repo)
-            self.assertEqual([path.name for path in paths], ["2026-10.json"])
-            text = paths[0].read_text(encoding="utf-8")
-            self.assertNotIn("session", text)
-            self.assertNotIn("rollout", text)
-            payload = json.loads(text)
-            entries = payload["days"]["2026-10-28"]
-            codex = next(entry for entry in entries.values() if entry["platform"] == "Codex")
-            self.assertEqual(codex["tokens"]["input"], 2000)
-            self.assertEqual(codex["cost"], 2.0)
-            self.assertEqual(len(codex["rates"]), 1)
+    def test_default_ledger_is_local_and_gitignored(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NOOB_USAGE_DIR", None)
+            ledger = UsageLedger(migrate=False)
+        root = Path(noob_usage.__file__).resolve().parent
+        self.assertEqual(ledger.directory, root / "usage")
+        self.assertIn("usage/", (root / ".gitignore").read_text(encoding="utf-8"))
 
-            restored = UsageLedger(Path(repo) / "restored")
-            restored.import_repo(repo)
-            self.assertEqual(restored.aggregate(NOW)["Codex"]["all"]["gpt-6.1-sol"]["estimate"],
-                             2.0)
-            self.assertGreaterEqual(len(restored.read_events()), 2)
-            with self.assertRaises(RuntimeError):
-                restored.import_repo(repo)
+    def test_moves_the_legacy_ledger_once(self):
+        with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as home:
+            legacy = Path(home) / "usage"
+            old = UsageLedger(legacy)
+            with old.transaction() as (state, events):
+                events.append(codex_event("2026-10-28", cost=1.0))
+            destination = Path(repo) / "usage"
+            with mock.patch.object(noob_usage, "default_directory",
+                                   return_value=destination), \
+                 mock.patch.object(noob_usage, "legacy_directory", return_value=legacy):
+                ledger = UsageLedger()
+                again = UsageLedger()
+            self.assertEqual(ledger.directory, destination)
+            self.assertTrue(ledger.has_events())
+            self.assertEqual(len(ledger.read_events()), 1)
+            self.assertFalse(legacy.exists())
+            self.assertEqual(len(again.read_events()), 1)
 
 
 class CodexCaptureTest(unittest.TestCase):

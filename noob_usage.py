@@ -5,15 +5,16 @@ that was in effect when it was recorded. Historical costs therefore never move
 when a price table changes, and they survive the deletion of the original
 Codex/OpenCode/pi logs.
 
-The ledger is local-only. `export_repo()` writes a sanitised daily aggregate
-(day, model, tokens, rates, cost) for backup; it never includes session IDs,
-prompt text, or filesystem paths.
+The ledger is local-only and gitignored. It lives next to the program so every
+checkout keeps its own private history, while the parsing and pricing logic
+itself stays in the repository.
 """
 
 import datetime as dt
 import fcntl
 import json
 import os
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -27,6 +28,13 @@ def default_directory():
     override = os.environ.get("NOOB_USAGE_DIR")
     if override:
         return Path(override).expanduser()
+    # Lives next to the program and is gitignored: every checkout keeps its own
+    # private ledger, and the updater never sees a dirty tracked file.
+    return Path(__file__).resolve().parent / "usage"
+
+
+def legacy_directory():
+    """Older releases kept the same ledger under the user's data folder."""
     return Path.home() / ".local" / "share" / "noob" / "usage"
 
 
@@ -74,11 +82,40 @@ def _clean_state(raw):
 class UsageLedger:
     """Local append-only ledger plus capture watermarks."""
 
-    def __init__(self, directory=None):
+    def __init__(self, directory=None, migrate=True):
         self.directory = Path(directory).expanduser() if directory else default_directory()
         self.events_dir = self.directory / "events"
         self.state_path = self.directory / "state.json"
         self.lock_path = self.directory / ".lock"
+        if migrate and directory is None and not os.environ.get("NOOB_USAGE_DIR"):
+            self._migrate_legacy()
+
+    def _migrate_legacy(self):
+        """Move the pre-checkout ledger once so existing history is not orphaned."""
+        legacy = legacy_directory()
+        if legacy == self.directory or not legacy.is_dir():
+            return
+        try:
+            legacy_has_events = any(
+                path.stat().st_size for path in legacy.glob("events/*.jsonl"))
+        except OSError:
+            legacy_has_events = False
+        if self.has_events() or not legacy_has_events:
+            return
+        if self.directory.exists():
+            try:
+                self.directory.rmdir()  # Only succeeds when it has no contents.
+            except OSError:
+                return
+        try:
+            self.directory.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(legacy), str(self.directory))
+        except OSError:
+            return
+        try:
+            legacy.parent.rmdir()
+        except OSError:
+            pass
 
     # -- storage ---------------------------------------------------------
 
@@ -208,124 +245,6 @@ class UsageLedger:
     def period_rows(self, platform, now=None, source=None):
         return (self.aggregate(now, source=source).get(platform) or
                 {period: {} for period in PERIODS})
-
-    # -- repository mirror ----------------------------------------------
-
-    def export_repo(self, root):
-        """Write sanitised monthly aggregates under `<root>/usage/`."""
-        root = Path(root).expanduser()
-        destination = root / "usage"
-        destination.mkdir(parents=True, exist_ok=True)
-        months = {}
-        seen_rates = {}
-        for event in self.read_events():
-            month = event["day"][:7]
-            day = months.setdefault(month, {}).setdefault(event["day"], {})
-            key = "%s/%s/%s/%s" % (str(event.get("platform", "")).lower(),
-                                   event.get("source", ""), event.get("model", ""),
-                                   event.get("display", ""))
-            entry = day.setdefault(key, {
-                "platform": event.get("platform"),
-                "source": event.get("source"),
-                "model": event.get("model"),
-                "display": event.get("display"),
-                "tokens": {field: 0 for field in TOKEN_FIELDS},
-                "cost": 0.0,
-                "currency": event.get("currency", "USD"),
-                "unpriced": 0,
-                "backfill": False,
-                "rates": [],
-            })
-            tokens = event.get("tokens") or {}
-            for field in TOKEN_FIELDS:
-                entry["tokens"][field] += int(tokens.get(field) or 0)
-            if event.get("currency") == "CNY":
-                entry["cost_cny"] = entry.get("cost_cny", 0.0) + float(event.get("cost_cny") or 0.0)
-                entry["cost_usd"] = entry.get("cost_usd", 0.0) + float(event.get("cost_usd") or 0.0)
-            else:
-                entry["cost"] += float(event.get("cost") or 0.0)
-            entry["unpriced"] += int(event.get("unpriced") or 0)
-            entry["backfill"] = entry["backfill"] or bool(event.get("backfill"))
-            snapshot = event.get("rates")
-            if snapshot is None:
-                snapshot = {"kind": event.get("kind"),
-                            "currency": event.get("currency", "USD"),
-                            "usd_cny": event.get("usd_cny"),
-                            "captured_at": event.get("at")}
-            signature = (month, event["day"], key,
-                         json.dumps({field: value for field, value in snapshot.items()
-                                     if field not in ("captured_at", "source")},
-                                    sort_keys=True))
-            if signature not in seen_rates:
-                seen_rates[signature] = True
-                entry["rates"].append(snapshot)
-        written = []
-        for month, days in sorted(months.items()):
-            path = destination / ("%s.json" % month)
-            payload = {"schema": SCHEMA, "month": month,
-                       "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-                       "days": days}
-            temporary = path.with_name("." + path.name + ".tmp")
-            temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
-                                 encoding="utf-8")
-            os.replace(temporary, path)
-            written.append(path)
-        return written
-
-    def import_repo(self, root):
-        """Seed an empty ledger from `<root>/usage/*.json`."""
-        if self.has_events():
-            raise RuntimeError("Local usage ledger already has events")
-        root = Path(root).expanduser()
-        events = []
-        for path in sorted((root / "usage").glob("*.json")):
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            days = payload.get("days")
-            if not isinstance(days, dict):
-                continue
-            for day, models in days.items():
-                if not isinstance(models, dict):
-                    continue
-                for entry in models.values():
-                    if not isinstance(entry, dict):
-                        continue
-                    tokens = entry.get("tokens") or {}
-                    if not any(int(tokens.get(field) or 0) for field in TOKEN_FIELDS):
-                        continue
-                    events.append({
-                        "at": "%sT00:00:00" % day,
-                        "day": day,
-                        "platform": entry.get("platform") or "Codex",
-                        "source": entry.get("source") or "repo",
-                        "model": entry.get("model") or entry.get("display") or "Unknown model",
-                        "display": entry.get("display") or entry.get("model") or "Unknown model",
-                        "kind": "import",
-                        "tokens": {field: int(tokens.get(field) or 0) for field in TOKEN_FIELDS},
-                        "cost": float(entry.get("cost") or 0.0),
-                        "cost_cny": float(entry.get("cost_cny") or 0.0),
-                        "cost_usd": float(entry.get("cost_usd") or 0.0),
-                        "usd_cny": None,
-                        "currency": entry.get("currency") or "USD",
-                        "unpriced": int(entry.get("unpriced") or 0),
-                        "backfill": True,
-                        "origin": "repo",
-                    })
-        if not events:
-            raise RuntimeError("No usable usage history found under %s" % (root / "usage"))
-        with self.transaction() as (state, pending):
-            pending.extend(events)
-            state["baseline_only"] = True
-            # Seed opencode's watermarks so today's live totals are not added twice.
-            for event in events:
-                if event["platform"] != "DeepSeek" or event["source"] != "opencode":
-                    continue
-                day = state["opencode"]["days"].setdefault(event["day"], {})
-                key = "%s|%s" % (event["model"], event["display"])
-                day[key] = {field: event["tokens"][field] for field in TOKEN_FIELDS}
-        return events
 
 
 def valid_event(event):
