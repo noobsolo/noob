@@ -243,8 +243,11 @@ class UsageLedger:
         return rows
 
     def period_rows(self, platform, now=None, source=None):
-        return (self.aggregate(now, source=source).get(platform) or
-                {period: {} for period in PERIODS})
+        # aggregate() only creates the windows that actually have events, so a
+        # platform with no usage today is missing its "day" bucket. Callers index
+        # every period, so fill the gaps here.
+        rows = self.aggregate(now, source=source).get(platform) or {}
+        return {period: rows.get(period) or {} for period in PERIODS}
 
 
 def valid_event(event):
