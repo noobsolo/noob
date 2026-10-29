@@ -3,6 +3,8 @@
 
 import argparse
 import datetime as dt
+import fcntl
+import hashlib
 import json
 import math
 import os
@@ -12,6 +14,7 @@ import select
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import time
 import urllib.error
@@ -1782,10 +1785,167 @@ def uninstall_daily_schedule(agent_path=None):
     return destination
 
 
+UPDATE_FETCH_TIMEOUT = 6.0
+UPDATE_RESTARTED_ENV = "NOOB_UPDATE_RESTARTED"
+UPDATE_NOTICE_ENV = "NOOB_UPDATE_NOTICE"
+
+
+def update_git_env():
+    """Environment that keeps git from blocking on credentials or host keys."""
+    env = dict(os.environ)
+    env.update({
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_ASKPASS": "/usr/bin/true",
+        "SSH_ASKPASS": "/usr/bin/true",
+        "GIT_SSH_COMMAND": "ssh -o BatchMode=yes",
+    })
+    return env
+
+
+def update_git(root, *args, timeout=5):
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True,
+                          text=True, timeout=timeout, env=update_git_env(), check=False)
+
+
+@contextmanager
+def update_lock(root):
+    """Yield False when another noob is already updating the same checkout."""
+    digest = hashlib.sha1(str(root).encode("utf-8")).hexdigest()[:12]
+    path = Path(tempfile.gettempdir()) / ("noob-update-%s.lock" % digest)
+    with path.open("a+") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def check_for_update(root=None, timeout=UPDATE_FETCH_TIMEOUT):
+    """Fast-forward the running checkout to its upstream branch.
+
+    This rides along with the launch, so every failure (offline, detached HEAD,
+    dirty tree, local commits) is reported as a status instead of raised.
+    """
+    root = Path(root) if root is not None else Path(__file__).resolve().parent
+    if shutil.which("git") is None:
+        return {"status": "skipped", "reason": "git is not installed"}
+    try:
+        top = update_git(root, "rev-parse", "--show-toplevel")
+        if top.returncode != 0:
+            return {"status": "skipped", "reason": "not a git checkout"}
+        root = Path(top.stdout.strip())
+        with update_lock(root) as acquired:
+            if not acquired:
+                return {"status": "skipped", "reason": "another noob is already updating"}
+            return fast_forward_checkout(root, timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"status": "skipped", "reason": "git failed: %s" % exc}
+
+
+def fast_forward_checkout(root, timeout=UPDATE_FETCH_TIMEOUT):
+    """Apply an upstream update when it is a clean, unambiguous fast-forward."""
+    branch = update_git(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    branch_name = branch.stdout.strip()
+    if branch.returncode != 0 or not branch_name:
+        return {"status": "skipped", "reason": "detached HEAD"}
+    status = update_git(root, "status", "--porcelain", "--untracked-files=no")
+    if status.stdout.strip():
+        return {"status": "skipped", "reason": "local changes in %s" % root}
+    upstream = update_git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name",
+                          "@{upstream}")
+    upstream_name = upstream.stdout.strip()
+    if upstream.returncode != 0 or not upstream_name:
+        return {"status": "skipped",
+                "reason": "%s has no upstream branch" % branch_name}
+    remote = upstream_name.split("/", 1)[0]
+    fetched = update_git(root, "fetch", "--quiet", remote, timeout=timeout)
+    if fetched.returncode != 0:
+        return {"status": "error",
+                "reason": "fetch failed: %s" % (fetched.stderr.strip() or "unknown error")}
+    counts = update_git(root, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
+    if counts.returncode != 0:
+        return {"status": "error",
+                "reason": "could not compare with %s: %s" % (
+                    upstream_name, counts.stderr.strip() or "unknown error")}
+    try:
+        ahead, behind = (int(value) for value in counts.stdout.split())
+    except ValueError:
+        return {"status": "error",
+                "reason": "unexpected git output: %s" % counts.stdout.strip()}
+    previous = update_git(root, "rev-parse", "HEAD").stdout.strip()
+    if behind == 0:
+        return {"status": "current", "branch": branch_name, "upstream": upstream_name,
+                "previous": previous, "current": previous, "commits": 0}
+    if ahead:
+        return {"status": "skipped", "branch": branch_name, "upstream": upstream_name,
+                "previous": previous, "current": previous, "commits": 0,
+                "reason": "local commits diverge from %s" % upstream_name}
+    merged = update_git(root, "merge", "--ff-only", "--quiet", "@{upstream}",
+                        timeout=timeout)
+    if merged.returncode != 0:
+        return {"status": "error",
+                "reason": "fast-forward failed: %s" % (
+                    merged.stderr.strip() or merged.stdout.strip() or "unknown error")}
+    current = update_git(root, "rev-parse", "HEAD").stdout.strip()
+    return {"status": "updated", "branch": branch_name, "upstream": upstream_name,
+            "previous": previous, "current": current, "commits": behind}
+
+
+def update_result_message(result):
+    status = result.get("status")
+    if status == "updated":
+        return "noob updated: %s -> %s (%d new commit%s)" % (
+            result["previous"][:7], result["current"][:7], result["commits"],
+            "" if result["commits"] == 1 else "s")
+    if status == "current":
+        return "noob is up to date (%s)" % result["current"][:7]
+    return "noob not updated: %s" % result.get("reason", status)
+
+
+def auto_update_enabled():
+    return not os.environ.get("NOOB_NO_UPDATE") and not os.environ.get(UPDATE_RESTARTED_ENV)
+
+
+def auto_update_on_start(argv=None):
+    """Update before the dashboard starts, then exec into the new code.
+
+    A successful update replaces this process so the new logic is what the user
+    actually sees. The guard variable keeps a failed update from looping.
+    """
+    if not auto_update_enabled():
+        return None
+    result = check_for_update()
+    if result["status"] != "updated":
+        return result
+    message = update_result_message(result)
+    env = dict(os.environ)
+    env[UPDATE_RESTARTED_ENV] = "1"
+    env[UPDATE_NOTICE_ENV] = message
+    print(message + "; restarting", file=sys.stderr)
+    sys.stderr.flush()
+    script = str(Path(__file__).resolve())
+    arguments = [sys.executable, script] + list(sys.argv[1:] if argv is None else argv)
+    try:
+        os.execve(sys.executable, arguments, env)
+    except OSError as exc:
+        # Keep running the old code, but still tell the user and the UI.
+        os.environ[UPDATE_NOTICE_ENV] = message
+        print("warning: could not restart after updating: %s" % exc, file=sys.stderr)
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="noob", description="Show subscription quotas, API balances, and the API-price equivalent of local token usage")
     parser.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     parser.add_argument("--once", action="store_true", help="show one snapshot without auto-refresh")
+    parser.add_argument("--no-update", action="store_true",
+                        help="skip the update check at start-up (also NOOB_NO_UPDATE=1)")
+    parser.add_argument("--update", action="store_true",
+                        help="fast-forward the checkout to the latest version, then exit")
     parser.add_argument("--api", action="store_true", help="also query API organization billing (requires OPENAI_ADMIN_KEY)")
     parser.add_argument("--api-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--daily-cards", action="store_true",
@@ -1797,6 +1957,15 @@ def main(argv=None):
     parser.add_argument("--uninstall-daily", action="store_true",
                         help="remove the nightly capture schedule")
     args = parser.parse_args(argv)
+    if args.update:
+        result = check_for_update()
+        print(update_result_message(result))
+        return 0 if result["status"] in ("updated", "current") else 1
+    if not args.no_update:
+        auto_update_on_start(sys.argv[1:] if argv is None else argv)
+    update_notice = os.environ.pop(UPDATE_NOTICE_ENV, None)
+    if update_notice and not sys.stdout.isatty():
+        print(update_notice, file=sys.stderr)
     if args.uninstall_daily:
         destination = uninstall_daily_schedule()
         print("Removed nightly capture: %s" % destination)
@@ -1830,7 +1999,7 @@ def main(argv=None):
     view = "home"
     reset_credits = None
     subscription_info = load_subscription_info()
-    save_notice = None
+    save_notice = update_notice
     first_query = True
     if interactive:
         sys.stdout.write("\033[H\033[J" + render_loading(width, color) + "\n")

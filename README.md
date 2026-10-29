@@ -56,6 +56,24 @@ Keys:
 | `k` | Toggle the models view |
 | `Ctrl-C` | Quit |
 
+## Auto-update
+
+`noob` checks its own checkout at launch and fast-forwards to the upstream
+branch, then restarts into the new code, so new dashboard features show up
+without a manual `git pull`.
+
+It only updates a clean checkout that is strictly behind its upstream branch.
+Local commits, uncommitted tracked changes, a detached HEAD, a missing upstream,
+or an offline machine are left untouched, and a lock keeps two noob instances
+from updating at the same time.
+
+```sh
+noob --update      # check and install an update now, then exit
+noob --no-update   # skip the start-up check
+```
+
+Set `NOOB_NO_UPDATE=1` to disable the start-up check from scripts or launchd.
+
 ## Nightly cards
 
 Capture the home usage card and the models detail card every night at midnight,
