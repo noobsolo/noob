@@ -500,6 +500,68 @@ def add_local_usage(rows, model, token_delta):
         row["estimate"] += cost
 
 
+def rollout_logs(root):
+    """Rollout logs under `root`, including Codex's compressed `.jsonl.zst` archives.
+
+    Codex compresses old rollouts, so matching only `*.jsonl` silently drops every
+    session past the compression cutoff. A plain file wins over its compressed twin
+    so a compression in flight is never counted twice.
+    """
+    logs = {}
+    for path in root.rglob("rollout-*"):
+        if not path.is_file():
+            continue
+        if path.name.endswith(".jsonl.zst"):
+            logs.setdefault(path.name[:-len(".zst")], path)
+        elif path.name.endswith(".jsonl"):
+            logs[path.name] = path
+    return list(logs.values())
+
+
+@contextmanager
+def zstd_text(path):
+    """Yield a `.zst` file as text, using whichever decoder this Python has."""
+    try:
+        from compression import zstd  # Python 3.14+ standard library
+    except ImportError:
+        pass
+    else:
+        with zstd.open(path, "rt", encoding="utf-8") as stream:
+            yield stream
+        return
+    try:
+        import zstandard
+    except ImportError:
+        pass
+    else:
+        with zstandard.open(path, "rt", encoding="utf-8") as stream:
+            yield stream
+        return
+    if shutil.which("zstd"):
+        process = subprocess.Popen(["zstd", "-dc", str(path)], stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
+        try:
+            yield process.stdout
+        finally:
+            process.stdout.close()
+            if process.poll() is None:
+                process.terminate()
+            process.wait()
+        return
+    raise OSError("no zstd decoder for compressed Codex sessions")
+
+
+@contextmanager
+def rollout_text(path):
+    """Yield one rollout log as text, decompressing `.jsonl.zst` when needed."""
+    if not path.name.endswith(".zst"):
+        with path.open("r", encoding="utf-8") as stream:
+            yield stream
+        return
+    with zstd_text(path) as stream:
+        yield stream
+
+
 def scan_local_sessions(root=None, now=None):
     root = Path(root or os.environ.get("CODEX_HOME", "~/.codex")).expanduser() / "sessions"
     now = now or dt.datetime.now().astimezone()
@@ -508,12 +570,12 @@ def scan_local_sessions(root=None, now=None):
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     rows = {period: defaultdict(empty_local_row) for period in ("day", "week", "month", "all")}
     file_count = 0
-    for path in root.rglob("rollout-*.jsonl") if root.is_dir() else ():
+    for path in rollout_logs(root) if root.is_dir() else ():
         file_count += 1
         model = None
         previous = None
         try:
-            with path.open("r", encoding="utf-8") as stream:
+            with rollout_text(path) as stream:
                 for line in stream:
                     try:
                         entry = json.loads(line)

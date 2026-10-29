@@ -5,7 +5,9 @@ import os
 import plistlib
 import random
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unicodedata
@@ -229,6 +231,74 @@ class NoobTest(unittest.TestCase):
         self.assertEqual([round(data[period]["gpt-6-sol"]["estimate"], 2)
                           for period in ("day", "week", "month", "all")],
                          [0.2, 0.6, 0.8, 1.0])
+
+    def test_compressed_rollout_sessions_keep_month_and_all_apart(self):
+        try:
+            from compression import zstd
+        except ImportError:
+            self.skipTest("this Python has no stdlib zstd support")
+        now = dt.datetime(2026, 10, 29, 12, tzinfo=dt.timezone.utc)
+        entries = [{"timestamp": "2026-09-22T09:00:00Z", "type": "turn_context",
+                    "payload": {"model": "gpt-6-sol"}},
+                   {"timestamp": "2026-09-22T09:01:00Z", "type": "event_msg",
+                    "payload": {"type": "token_count", "info": {
+                        "total_token_usage": {"input_tokens": 100_000}}}}]
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "sessions" / "2026" / "09" / "rollout-september.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text("\n".join(json.dumps(entry) for entry in entries), encoding="utf-8")
+            path.with_suffix(".jsonl.zst").write_bytes(zstd.compress(path.read_bytes()))
+            path.unlink()  # Codex leaves only the compressed archive once a rollout ages out
+            data = noob.scan_local_sessions(folder, now)
+        self.assertEqual(data["files"], 1)
+        self.assertEqual(noob.local_summary(data["all"])[0], 100_000)
+        self.assertEqual(noob.local_summary(data["month"])[0], 0)
+        self.assertAlmostEqual(data["all"]["gpt-6-sol"]["estimate"], 0.2)
+        self.assertEqual(data["month"], {})
+
+    def test_rollout_seen_in_both_forms_is_counted_once(self):
+        try:
+            from compression import zstd
+        except ImportError:
+            self.skipTest("this Python has no stdlib zstd support")
+        now = dt.datetime(2026, 10, 29, 12, tzinfo=dt.timezone.utc)
+        entries = [{"timestamp": "2026-10-28T09:00:00Z", "type": "turn_context",
+                    "payload": {"model": "gpt-6-sol"}},
+                   {"timestamp": "2026-10-28T09:01:00Z", "type": "event_msg",
+                    "payload": {"type": "token_count", "info": {
+                        "total_token_usage": {"input_tokens": 500_000}}}}]
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "sessions" / "rollout-half-written.jsonl"
+            path.parent.mkdir(parents=True)
+            text = "\n".join(json.dumps(entry) for entry in entries)
+            path.write_text(text, encoding="utf-8")
+            path.with_suffix(".jsonl.zst").write_bytes(zstd.compress(text.encode("utf-8")))
+            data = noob.scan_local_sessions(folder, now)
+        self.assertEqual(data["files"], 1)
+        self.assertEqual(noob.local_summary(data["all"])[0], 500_000)
+
+    def test_compressed_sessions_fall_back_to_the_zstd_command(self):
+        try:
+            from compression import zstd
+        except ImportError:
+            self.skipTest("this Python has no stdlib zstd support")
+        if not shutil.which("zstd"):
+            self.skipTest("the zstd command is not installed")
+        now = dt.datetime(2026, 10, 29, 12, tzinfo=dt.timezone.utc)
+        entries = [{"timestamp": "2026-10-28T09:00:00Z", "type": "turn_context",
+                    "payload": {"model": "gpt-6-sol"}},
+                   {"timestamp": "2026-10-28T09:01:00Z", "type": "event_msg",
+                    "payload": {"type": "token_count", "info": {
+                        "total_token_usage": {"input_tokens": 250_000}}}}]
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "sessions" / "rollout-cli.jsonl.zst"
+            path.parent.mkdir(parents=True)
+            path.write_bytes(zstd.compress("\n".join(json.dumps(entry) for entry in entries)
+                                           .encode("utf-8")))
+            with mock.patch.dict(sys.modules, {"compression": None, "zstandard": None}):
+                data = noob.scan_local_sessions(folder, now)
+        self.assertEqual(data["files"], 1)
+        self.assertEqual(noob.local_summary(data["all"])[0], 250_000)
 
     def test_model_columns_default_today_and_click_sort(self):
         def row(value):

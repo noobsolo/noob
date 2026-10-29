@@ -36,7 +36,9 @@ Press `s` to save a usage card, `m` for reset credits, or open the models view w
 
 - macOS
 - `codex` CLI, logged in with `codex login`
-- Python 3 (no extra packages)
+- Python 3 (no extra packages). Compressed Codex rollouts (`*.jsonl.zst`) need
+  Python 3.14+, the `zstandard` package, or the `zstd` command; without one of
+  them those older sessions are skipped.
 
 ## Run
 
