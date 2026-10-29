@@ -318,37 +318,34 @@ class NoobTest(unittest.TestCase):
                   "month": {"gpt-6-sol": row(5), "gpt-5.5": row(4)},
                   "all": {"gpt-6-sol": row(7), "gpt-5.5": row(6)}}
         usage = noob.build_usage([("Codex", source)])
-        targets = {}
-        default = noob.render_models(usage, width=80, mouse_enabled=True, mouse_targets=targets)
+        default = noob.render_models(usage, width=80)
         self.assertIn("gpt-6-sol", default)
-        self.assertIn("Click a column to sort", default)
+        self.assertIn("T/W/M/A: sort", default)
         self.assertIn("TODAY ↓", default)
         self.assertLess(default.index("gpt-5.5"), default.index("gpt-6-sol"))
-        self.assertEqual(targets["columns"][0], (24, 32, "day"))
-        period, descending = noob.next_sort("day", True, "day")
+        self.assertEqual(noob.SORT_KEYS, {"t": "day", "w": "week", "m": "month", "a": "all"})
+        period, descending = noob.next_sort("day", True, noob.SORT_KEYS["t"])
         self.assertEqual((period, descending), ("day", False))
         ascending_day = noob.render_models(usage, width=80, sort_period=period, sort_desc=descending)
         self.assertIn("TODAY ↑", ascending_day)
         self.assertLess(ascending_day.index("gpt-6-sol"), ascending_day.index("gpt-5.5"))
-        period, descending = noob.next_sort(period, descending, "month")
+        period, descending = noob.next_sort(period, descending, noob.SORT_KEYS["m"])
         self.assertEqual((period, descending), ("month", True))
         sorted_month = noob.render_models(usage, width=80, sort_period=period, sort_desc=descending)
         self.assertIn("MONTH ↓", sorted_month)
         self.assertLess(sorted_month.index("gpt-6-sol"), sorted_month.index("gpt-5.5"))
 
-    def test_mouse_click_event_is_read(self):
+    def test_mouse_reports_are_swallowed_without_shortcuts(self):
+        # The models view sorts with keys now, so a click must not leak its
+        # trailing letter (the "M" in a mouse report) into the shortcut handler.
         read_fd, write_fd = os.pipe()
         try:
             os.write(write_fd, b"\x1b[<0;26;17M\x1b[<0;26;17m")
-            clicks = []
-            saves = []
+            keys = []
             with mock.patch.object(noob.sys, "stdout", io.StringIO()):
                 noob.wait_for_refresh(time.monotonic() + 0.02, 80, False,
-                                      input_fd=read_fd, on_click=lambda x, y: clicks.append((x, y)),
-                                      on_save_key=lambda: saves.append("usage"),
-                                      on_reset_key=lambda: saves.append("reset"))
-            self.assertEqual(clicks, [(26, 17)])
-            self.assertEqual(saves, [])
+                                      input_fd=read_fd, on_key=keys.append)
+            self.assertEqual(keys, [])
         finally:
             os.close(read_fd)
             os.close(write_fd)
@@ -357,7 +354,7 @@ class NoobTest(unittest.TestCase):
         incoming = (b"s\x1b[<0;26;17M\x1b[<0;26;17m"
                     b"\x1b[<64;26;17M\x1b[<65;26;17M"  # wheel
                     b"\x1b[A\x1bOS\x1b[1;2S\x1b[0m\x1bmMmsS")
-        expected = [("key", ord("s")), ("click", 26, 17)]
+        expected = [("key", ord("s"))]
         expected.extend(("key", key) for key in b"MmsS")
         # Split at every boundary, including immediately before mouse M/m.
         for boundary in range(len(incoming) + 1):
@@ -370,21 +367,18 @@ class NoobTest(unittest.TestCase):
         self.assertEqual([event for key in incoming for event in parser.feed(bytes([key]))],
                          expected)
 
-    def test_split_mouse_event_across_refreshes_does_not_save(self):
+    def test_split_mouse_event_across_refreshes_does_not_fire_shortcuts(self):
         read_fd, write_fd = os.pipe()
         parser = noob.TerminalInput()
-        clicks, saves = [], []
+        keys = []
         try:
             with mock.patch.object(noob.sys, "stdout", io.StringIO()):
                 for chunk in (b"\x1b[<0;26;17", b"M\x1b[<0;26;17", b"m", b"mS"):
                     os.write(write_fd, chunk)
                     noob.wait_for_refresh(
                         time.monotonic() + 0.02, 80, False, input_fd=read_fd,
-                        input_parser=parser, on_click=lambda x, y: clicks.append((x, y)),
-                        on_save_key=lambda: saves.append("usage"),
-                        on_reset_key=lambda: saves.append("reset"))
-            self.assertEqual(clicks, [(26, 17)])
-            self.assertEqual(saves, ["reset", "usage"])
+                        input_parser=parser, on_key=keys.append)
+            self.assertEqual(keys, ["m", "S"])
         finally:
             os.close(read_fd)
             os.close(write_fd)
@@ -406,7 +400,7 @@ class NoobTest(unittest.TestCase):
         saved = Path("/Users/eke/Downloads/noobsolo-usage-test.png")
 
         def save_once(*args, **kwargs):
-            kwargs["on_save_key"]()
+            kwargs["on_key"]("s")
             raise KeyboardInterrupt
 
         with mock.patch.object(noob.sys, "stdout", terminal), \
@@ -431,8 +425,8 @@ class NoobTest(unittest.TestCase):
             saves = []
             with mock.patch.object(noob.sys, "stdout", io.StringIO()):
                 noob.wait_for_refresh(time.monotonic() + 0.02, 80, False,
-                                      input_fd=read_fd, on_save_key=lambda: saves.append(True))
-            self.assertEqual(saves, [True, True])
+                                      input_fd=read_fd, on_key=lambda char: saves.append(char))
+            self.assertEqual(saves, ["s", "S"])
         finally:
             os.close(read_fd)
             os.close(write_fd)
@@ -450,7 +444,7 @@ class NoobTest(unittest.TestCase):
         saved = Path("/Users/eke/Downloads/noobsolo-reset-test.png")
 
         def save_once(*args, **kwargs):
-            kwargs["on_reset_key"]()
+            kwargs["on_key"]("m")
             raise KeyboardInterrupt
 
         with mock.patch.object(noob.sys, "stdout", terminal), \
@@ -472,8 +466,8 @@ class NoobTest(unittest.TestCase):
             saves = []
             with mock.patch.object(noob.sys, "stdout", io.StringIO()):
                 noob.wait_for_refresh(time.monotonic() + 0.02, 80, False,
-                                      input_fd=read_fd, on_reset_key=lambda: saves.append(True))
-            self.assertEqual(saves, [True, True])
+                                      input_fd=read_fd, on_key=lambda char: saves.append(char))
+            self.assertEqual(saves, ["m", "M"])
         finally:
             os.close(read_fd)
             os.close(write_fd)
@@ -739,8 +733,7 @@ class NoobTest(unittest.TestCase):
                                                 reset_credits={"availableCount": 1, "credits": [
                                                     {"status": "available", "expiresAt": 1792697605}]},
                                                 deepseek=balance),
-                               noob.render_models(usage, width=width, watch=True, color=True,
-                                                  mouse_enabled=True, mouse_targets={}),
+                               noob.render_models(usage, width=width, watch=True, color=True),
                                noob.render_home(noob.build_usage([]), {}, api, width=width,
                                                 warnings=("Temporary network issue",)),
                                noob.render_loading(width=width, color=True)):
@@ -780,12 +773,10 @@ class NoobTest(unittest.TestCase):
         self.assertIn("⑥ Oct 18 09:00", "\n".join(many_lines))
         self.assertTrue(all(len(line) == 80 for line in many_lines))
 
-        targets = {}
         source = {"day": {"m": {"input": 1, "cached": 0, "write": 0, "output": 0,
                                 "estimate": 1.0, "unpriced": 0, "calls": 1}}}
-        output = noob.render_models(noob.build_usage([("Codex", source)]), width=80,
-                                    mouse_targets=targets)
-        self.assertIn("MODEL", output.splitlines()[targets["y"] - 1])
+        output = noob.render_models(noob.build_usage([("Codex", source)]), width=80)
+        self.assertIn("MODEL", output.splitlines()[3])
 
     def test_subscription_text_appears_in_the_codex_section(self):
         info = {"renewal_date": "2026-10-22", "started_on": "2026-09-22"}
@@ -814,12 +805,10 @@ class NoobTest(unittest.TestCase):
         renewal = next(i for i, line in enumerate(lines) if "renews" in line)
         self.assertLess(codex, renewal)
         self.assertIn("oct 22, 2026  ·  subscribed 17 days", lines[renewal])
-        targets = {}
         source = {"day": {"m": {"input": 1, "cached": 0, "write": 0, "output": 0,
                                 "estimate": 1.0, "unpriced": 0, "calls": 1}}}
-        detail = noob.render_models(noob.build_usage([("Codex", source)]),
-                                    width=80, mouse_targets=targets)
-        self.assertIn("MODEL", detail.splitlines()[targets["y"] - 1])
+        detail = noob.render_models(noob.build_usage([("Codex", source)]), width=80)
+        self.assertIn("MODEL", detail.splitlines()[3])
 
 
     def test_deepseek_balance_parses_per_currency_entries(self):
@@ -1134,7 +1123,7 @@ class NoobTest(unittest.TestCase):
         saved = Path("/Users/eke/Downloads/noobsolo-usage-deepseek-test.png")
 
         def save_once(*args, **kwargs):
-            kwargs["on_save_key"]()
+            kwargs["on_key"]("s")
             raise KeyboardInterrupt
 
         with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"}), \
@@ -1387,8 +1376,8 @@ class NoobTest(unittest.TestCase):
         saved = Path("/Users/eke/Downloads/noobsolo-models-test.png")
 
         def act(*args, **kwargs):
-            kwargs["on_models_key"]()
-            kwargs["on_save_key"]()
+            kwargs["on_key"]("k")
+            kwargs["on_key"]("s")
             raise KeyboardInterrupt
 
         with mock.patch.object(noob.sys, "stdout", terminal), \
@@ -1401,6 +1390,42 @@ class NoobTest(unittest.TestCase):
         self.assertEqual(card.call_args.kwargs, {"sort_period": "day", "sort_desc": True})
         self.assertIn("MODEL", terminal.getvalue())
         self.assertIn("Saved models card", terminal.getvalue())
+
+    def test_sort_keys_order_the_models_view(self):
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+
+        terminal = Terminal()
+
+        def row(cost):
+            return {"input": 1000, "cached": 0, "write": 0, "output": 100,
+                    "estimate": cost, "unpriced": 0, "calls": 1}
+
+        source = {"day": {"gpt-6-sol": row(9.0), "gpt-5.5": row(1.0)},
+                  "week": {"gpt-6-sol": row(1.0), "gpt-5.5": row(9.0)},
+                  "month": {"gpt-6-sol": row(5.0), "gpt-5.5": row(4.0)},
+                  "all": {"gpt-6-sol": row(2.0), "gpt-5.5": row(8.0)}}
+
+        def act(*args, **kwargs):
+            kwargs["on_key"]("k")   # open the models view
+            kwargs["on_key"]("w")   # week, descending
+            kwargs["on_key"]("W")   # same key again flips to ascending
+            kwargs["on_key"]("m")   # month: sorts here instead of saving a card
+            raise KeyboardInterrupt
+
+        with mock.patch.object(noob.sys, "stdout", terminal), \
+             mock.patch.object(noob, "codex_data", return_value={}), \
+             mock.patch.object(noob, "scan_local_sessions", return_value=source), \
+             mock.patch.object(noob, "save_reset_card") as reset_card, \
+             mock.patch.object(noob, "wait_for_refresh", side_effect=act):
+            self.assertEqual(noob.main([]), 0)
+        output = terminal.getvalue()
+        self.assertIn("WEEK ↓", output)
+        self.assertIn("WEEK ↑", output)
+        self.assertIn("MONTH ↓", output)
+        self.assertNotIn("TODAY ↓", output[output.index("WEEK ↓"):])
+        reset_card.assert_not_called()
 
     def test_models_card_sorts_by_viewed_period(self):
         def row(cost):
