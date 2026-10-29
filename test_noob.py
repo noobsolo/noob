@@ -30,6 +30,8 @@ class NoobTest(unittest.TestCase):
         environment = mock.patch.dict(os.environ)
         environment.start()
         os.environ.pop("DEEPSEEK_API_KEY", None)
+        # Unit tests must never fast-forward the checkout they run from.
+        os.environ["NOOB_NO_UPDATE"] = "1"
         self.addCleanup(environment.stop)
         # Never let a test read the developer's real macOS Keychain item.
         self.real_keychain_secret = noob.keychain_secret
@@ -1514,6 +1516,127 @@ class NoobTest(unittest.TestCase):
         for value in ("24:00", "12:60", "midnight", "12", ""):
             with self.assertRaises(ValueError):
                 noob.parse_clock(value)
+
+
+@unittest.skipUnless(shutil.which("git"), "git is required for update tests")
+class AutoUpdateTest(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root)
+        self.seed = self.root / "seed"
+        self.remote = self.root / "remote.git"
+        self.work = self.root / "work"
+        self.seed.mkdir()
+        self.git("init", "--quiet", "-b", "main", cwd=self.seed)
+        (self.seed / "noob.py").write_text("version = 1\n")
+        self.git("add", "noob.py", cwd=self.seed)
+        self.git("commit", "--quiet", "-m", "first", cwd=self.seed)
+        self.git("clone", "--quiet", "--bare", str(self.seed), str(self.remote),
+                 cwd=self.root)
+        self.git("remote", "add", "origin", str(self.remote), cwd=self.seed)
+        self.git("push", "--quiet", "-u", "origin", "main", cwd=self.seed)
+        self.git("clone", "--quiet", str(self.remote), str(self.work), cwd=self.root)
+
+    def git(self, *args, cwd, check=True):
+        env = dict(os.environ)
+        env.update({
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull,
+            "GIT_AUTHOR_NAME": "Noob",
+            "GIT_AUTHOR_EMAIL": "noob@example.com",
+            "GIT_COMMITTER_NAME": "Noob",
+            "GIT_COMMITTER_EMAIL": "noob@example.com",
+        })
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
+                              check=check, env=env)
+
+    def publish(self, text):
+        (self.seed / "noob.py").write_text(text)
+        self.git("commit", "--quiet", "-am", "next", cwd=self.seed)
+        self.git("push", "--quiet", "origin", "main", cwd=self.seed)
+
+    def test_fast_forwards_a_clean_checkout_to_the_upstream(self):
+        old = (self.work / "noob.py").read_text()
+        self.publish("version = 2\n")
+        result = noob.check_for_update(self.work)
+        self.assertEqual(result["status"], "updated")
+        self.assertEqual(result["commits"], 1)
+        self.assertEqual((self.work / "noob.py").read_text(), "version = 2\n")
+        self.assertNotEqual(result["previous"], result["current"])
+        self.assertNotEqual(old, (self.work / "noob.py").read_text())
+
+    def test_matching_upstream_reports_current(self):
+        result = noob.check_for_update(self.work)
+        self.assertEqual(result["status"], "current")
+        self.assertEqual(result["commits"], 0)
+        self.assertEqual(result["previous"], result["current"])
+
+    def test_local_changes_are_left_alone(self):
+        self.publish("version = 2\n")
+        (self.work / "noob.py").write_text("version = 99\n")
+        result = noob.check_for_update(self.work)
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("local changes", result["reason"])
+        self.assertEqual((self.work / "noob.py").read_text(), "version = 99\n")
+
+    def test_local_commits_are_not_rewritten(self):
+        (self.work / "noob.py").write_text("version = 3\n")
+        self.git("commit", "--quiet", "-am", "local", cwd=self.work)
+        head = self.git("rev-parse", "HEAD", cwd=self.work).stdout
+        self.publish("version = 2\n")
+        result = noob.check_for_update(self.work)
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("diverge", result["reason"])
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.work).stdout, head)
+
+    def test_detached_head_is_skipped(self):
+        self.git("checkout", "--quiet", "--detach", "HEAD", cwd=self.work)
+        result = noob.check_for_update(self.work)
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("detached", result["reason"])
+
+    def test_branch_without_upstream_is_skipped(self):
+        self.git("switch", "--quiet", "-c", "topic", cwd=self.work)
+        result = noob.check_for_update(self.work)
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("no upstream", result["reason"])
+
+    def test_plain_folder_is_not_a_checkout(self):
+        plain = self.root / "plain"
+        plain.mkdir()
+        result = noob.check_for_update(plain)
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("not a git checkout", result["reason"])
+
+    def test_update_flag_reports_and_exits(self):
+        result = {"status": "current", "current": "abcdef1234567", "commits": 0}
+        with mock.patch.object(noob, "check_for_update", return_value=result), \
+             mock.patch.object(noob.sys, "stdout", io.StringIO()) as out:
+            self.assertEqual(noob.main(["--update"]), 0)
+        self.assertIn("up to date", out.getvalue())
+
+    def test_successful_update_restarts_into_the_new_code(self):
+        result = {"status": "updated", "previous": "1111111aaaa", "current": "2222222bbbb",
+                  "commits": 2}
+        with mock.patch.dict(os.environ, {}, clear=False), \
+             mock.patch.object(noob, "check_for_update", return_value=result), \
+             mock.patch.object(noob.os, "execve") as execve, \
+             mock.patch.object(noob.sys, "stderr", io.StringIO()):
+            os.environ.pop("NOOB_NO_UPDATE", None)
+            os.environ.pop(noob.UPDATE_RESTARTED_ENV, None)
+            noob.auto_update_on_start(["--once"])
+        path, arguments, env = execve.call_args.args
+        self.assertEqual(path, sys.executable)
+        self.assertEqual(arguments[1], str(Path(noob.__file__).resolve()))
+        self.assertEqual(arguments[2:], ["--once"])
+        self.assertEqual(env[noob.UPDATE_RESTARTED_ENV], "1")
+        self.assertIn("2 new commits", env[noob.UPDATE_NOTICE_ENV])
+
+    def test_no_update_environment_disables_the_check(self):
+        with mock.patch.dict(os.environ, {"NOOB_NO_UPDATE": "1"}), \
+             mock.patch.object(noob, "check_for_update") as check:
+            self.assertIsNone(noob.auto_update_on_start([]))
+        check.assert_not_called()
 
 
 if __name__ == "__main__":
