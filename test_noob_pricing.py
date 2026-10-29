@@ -1,6 +1,7 @@
 import http.client
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -157,7 +158,8 @@ class PricingTest(unittest.TestCase):
                 noob.add_local_usage(result[period], "gpt-new-sol", row)
             return result
         terminal = io.StringIO()
-        with mock.patch.object(noob, "RATES", dict(noob.RATES)), \
+        with mock.patch.dict(os.environ, {"NOOB_NO_USAGE_CAPTURE": "1"}), \
+             mock.patch.object(noob, "RATES", dict(noob.RATES)), \
              mock.patch.object(noob, "LONG_RATES", {}), \
              mock.patch.object(noob, "LONG_CONTEXT_MODELS", set(noob.LONG_CONTEXT_MODELS)), \
              mock.patch.object(noob, "refresh_prices", return_value=(snapshot(), None)) as refresh, \
