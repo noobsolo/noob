@@ -1830,6 +1830,7 @@ def check_for_update(root=None, timeout=UPDATE_FETCH_TIMEOUT):
     This rides along with the launch, so every failure (offline, detached HEAD,
     dirty tree, local commits) is reported as a status instead of raised.
     """
+    root_arg = root
     root = Path(root) if root is not None else Path(__file__).resolve().parent
     if shutil.which("git") is None:
         return {"status": "skipped", "reason": "git is not installed"}
@@ -1837,7 +1838,17 @@ def check_for_update(root=None, timeout=UPDATE_FETCH_TIMEOUT):
         top = update_git(root, "rev-parse", "--show-toplevel")
         if top.returncode != 0:
             return {"status": "skipped", "reason": "not a git checkout"}
-        root = Path(top.stdout.strip())
+        checkout = Path(top.stdout.strip()).resolve()
+        if root_arg is None and checkout != root.resolve():
+            # Never fast-forward an unrelated repository that happens to
+            # contain a copy of noob.py somewhere below its root.
+            return {"status": "skipped",
+                    "reason": "noob.py is not at the repository root"}
+        if root_arg is None and update_git(
+                checkout, "ls-files", "--error-unmatch", "noob.py").returncode != 0:
+            return {"status": "skipped",
+                    "reason": "noob.py is not tracked by %s" % checkout}
+        root = checkout
         with update_lock(root) as acquired:
             if not acquired:
                 return {"status": "skipped", "reason": "another noob is already updating"}
