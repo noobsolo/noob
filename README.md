@@ -74,6 +74,18 @@ noob --no-update   # skip the start-up check
 
 Set `NOOB_NO_UPDATE=1` to disable the start-up check from scripts or launchd.
 
+## Versioning
+
+`VERSION` in `noob.py` is the single source of truth and is shown in dim gray at
+the bottom-right of the dashboard (`v0.1.0`). Releases follow `0.x.0`: every
+change bumps the middle number unless the request says otherwise, so the next
+versions are `0.2.0`, `0.3.0`, and so on.
+
+When a launch-time update installs a new version, the badge replaces the old
+`noob updated: …` line and turns green for that session, so you can tell at a
+glance that you are now running the freshly pulled code.
+
+
 ## Local usage history
 
 Costs are not recomputed from the raw logs every launch anymore. `noob` records
