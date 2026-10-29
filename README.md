@@ -52,9 +52,13 @@ Keys:
 | Key | Action |
 | --- | --- |
 | `s` | Save a card for the current view (usage, or model costs in the models view) |
-| `m` | Save a reset-credit card PNG |
+| `m` | Save a reset-credit card PNG (home view) |
 | `k` | Toggle the models view |
+| `t` / `w` / `m` / `a` | Models view: sort by today / week / month / all; press the same key again to flip ascending |
 | `Ctrl-C` | Quit |
+
+Sorting is keyboard-only; `m` means month inside the models view, while on the
+home view it still saves the reset-credit card.
 
 ## Auto-update
 
@@ -77,9 +81,9 @@ Set `NOOB_NO_UPDATE=1` to disable the start-up check from scripts or launchd.
 ## Versioning
 
 `VERSION` in `noob.py` is the single source of truth and is shown in dim gray at
-the bottom-right of the dashboard (`v0.1.0`). Releases follow `0.x.0`: every
+the bottom-right of the dashboard (`v0.2.0`). Releases follow `0.x.0`: every
 change bumps the middle number unless the request says otherwise, so the next
-versions are `0.2.0`, `0.3.0`, and so on.
+versions are `0.3.0`, `0.4.0`, and so on.
 
 When a launch-time update installs a new version, the badge replaces the old
 `noob updated: …` line and turns green for that session, so you can tell at a

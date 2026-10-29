@@ -37,7 +37,7 @@ from noob_usage import PERIODS as USAGE_PERIODS, UsageLedger
 # Release version, shown at the bottom-right of the dashboard. Every change
 # bumps the middle number unless the request says otherwise:
 # 0.1.0 -> 0.2.0 -> 0.3.0 ...
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 
 API_BASE = "https://api.openai.com/v1"
@@ -1175,9 +1175,6 @@ def reset_banner(credits, width=80, color=False):
                            "1;97;48;2;176;0;101", color) for line in lines)
 
 
-MOUSE_EVENT = re.compile(rb"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
-
-
 class TerminalInput:
     """Keep terminal escape sequences separate from ordinary shortcut keys."""
 
@@ -1205,11 +1202,8 @@ class TerminalInput:
                 if len(self.sequence) < 256:
                     self.sequence.append(key)
                 if 0x40 <= key <= 0x7e:
-                    match = MOUSE_EVENT.fullmatch(self.sequence)
-                    if match:
-                        button, x, y, action = match.groups()
-                        if action == b"M" and int(button) & 99 == 0:
-                            events.append(("click", int(x), int(y)))
+                    # Arrows, function keys, and mouse reports end here; they are
+                    # consumed as a sequence so no stray letter becomes a shortcut.
                     self.state = "key"
                     self.sequence.clear()
                 elif key == 27:
@@ -1218,8 +1212,7 @@ class TerminalInput:
         return events
 
 
-def wait_for_refresh(deadline, width, color, input_fd=None, on_click=None,
-                     on_save_key=None, on_reset_key=None, on_models_key=None, input_parser=None,
+def wait_for_refresh(deadline, width, color, input_fd=None, on_key=None, input_parser=None,
                      new_version=False):
     seconds = max(0, math.ceil(deadline - time.monotonic()))
     input_parser = input_parser if input_parser is not None else TerminalInput()
@@ -1232,15 +1225,8 @@ def wait_for_refresh(deadline, width, color, input_fd=None, on_click=None,
             if ready:
                 incoming = os.read(input_fd, 128)
                 for event in input_parser.feed(incoming):
-                    if event[0] == "click":
-                        if on_click:
-                            on_click(event[1], event[2])
-                    elif event[1] in (ord("s"), ord("S")) and on_save_key:
-                        on_save_key()
-                    elif event[1] in (ord("m"), ord("M")) and on_reset_key:
-                        on_reset_key()
-                    elif event[1] in (ord("k"), ord("K")) and on_models_key:
-                        on_models_key()
+                    if event[0] == "key" and on_key:
+                        on_key(chr(event[1]))
         updated = max(0, math.ceil(deadline - time.monotonic()))
         if updated != seconds and updated > 0:
             sys.stdout.write("\033[1A\r\033[2K" + countdown_line(updated, width, color,
@@ -1250,7 +1236,8 @@ def wait_for_refresh(deadline, width, color, input_fd=None, on_click=None,
 
 
 @contextmanager
-def interactive_mouse(enabled):
+def interactive_keys(enabled):
+    """Put the terminal in cbreak mode so shortcut keys arrive immediately."""
     if not enabled or not sys.stdin.isatty():
         yield None
         return
@@ -1262,12 +1249,9 @@ def interactive_mouse(enabled):
         return
     try:
         tty.setcbreak(fd)
-        sys.stdout.write("\033[?1000h\033[?1006h")
-        sys.stdout.flush()
         yield fd
     finally:
-        sys.stdout.write("\033[?1000l\033[?1006l")
-        sys.stdout.flush()
+        termios.tcsetattr(fd, termios.TCSADRAIN, original)
         termios.tcsetattr(fd, termios.TCSADRAIN, original)
 
 
@@ -1316,8 +1300,14 @@ def sorted_models(usage, period, descending):
     return sorted(usage["models"], key=key)
 
 
-def next_sort(current, descending, clicked):
-    return (clicked, not descending if clicked == current else True)
+def next_sort(current, descending, period):
+    """Sort a new period descending, or flip direction when it is already active."""
+    return (period, not descending if period == current else True)
+
+
+# Models view: one letter per column. First press sorts descending, the next one
+# flips that column to ascending.
+SORT_KEYS = {"t": "day", "w": "week", "m": "month", "a": "all"}
 
 
 def quota_lines(rows, width, color, indent=2, now_ts=None):
@@ -1532,20 +1522,15 @@ def model_cell(entry, period):
     return money(values.get("cost", 0.0))
 
 
-def models_lines(usage, width, color, sort_period, sort_desc, mouse_enabled, mouse_targets,
-                 line_offset=0):
+def models_lines(usage, width, color, sort_period, sort_desc, line_offset=0):
     heading = paint("MODELS", "1;36", color)
-    if mouse_enabled and width >= 64:
-        heading += paint("  Click a column to sort", "2", color)
+    if width >= 40:
+        heading += paint("  T/W/M/A: sort", "2", color)
     elif width >= 28:
         heading += paint("  %d models" % len(usage["models"]), "2", color)
     lines = [heading]
     names = sorted_models(usage, sort_period, sort_desc)
     if width >= 64:
-        if mouse_targets is not None:
-            mouse_targets["y"] = line_offset + len(lines) + 1
-            mouse_targets["columns"] = [(24 + index * 10, 32 + index * 10, period)
-                                        for index, (period, _) in enumerate(PERIODS)]
         headers = []
         for period, label in PERIODS:
             title = label + (" ↓" if sort_desc else " ↑") if period == sort_period else label
@@ -1574,12 +1559,10 @@ def models_lines(usage, width, color, sort_period, sort_desc, mouse_enabled, mou
 
 
 def render_home(usage, limits, api=None, color=False, width=80, warnings=(), watch=False,
-                refresh_in=60, mouse_enabled=False, mouse_targets=None,
-                reset_credits=None, save_notice=None, subscription_info=None, pricing_note=None,
-                deepseek=None, deepseek_hint=None, usd_cny=FALLBACK_USD_CNY, new_version=False):
+                refresh_in=60, reset_credits=None, save_notice=None, subscription_info=None,
+                pricing_note=None, deepseek=None, deepseek_hint=None,
+                usd_cny=FALLBACK_USD_CNY, new_version=False):
     width = max(20, width)
-    if mouse_targets is not None:
-        mouse_targets.clear()
     title = "noob"
     updated = dt.datetime.now().astimezone().strftime("%b %d  %H:%M")
     if len(title) + len(updated) + 2 <= width:
@@ -1660,18 +1643,16 @@ def render_home(usage, limits, api=None, color=False, width=80, warnings=(), wat
 
 
 def render_models(usage, color=False, width=80, warnings=(), watch=False, refresh_in=60,
-                  sort_period="day", sort_desc=True, mouse_enabled=False, mouse_targets=None,
-                  save_notice=None, pricing_note=None, new_version=False):
+                  sort_period="day", sort_desc=True, save_notice=None, pricing_note=None,
+                  new_version=False):
     width = max(20, width)
-    if mouse_targets is not None:
-        mouse_targets.clear()
     title = "noob  /  MODELS"
     updated = dt.datetime.now().astimezone().strftime("%b %d  %H:%M")
     if len(title) + len(updated) + 2 <= width:
         title += " " * (width - len(title) - len(updated) - 1) + updated
     lines = [paint(title, "1;37", color), paint("─" * (width - 1), "2", color)]
     lines.extend(models_lines(usage, width, color, sort_period, sort_desc,
-                              mouse_enabled, mouse_targets, line_offset=len(lines)))
+                              line_offset=len(lines)))
     if pricing_note:
         lines.extend(paint(line, "2", color) for line in textwrap.wrap(
             pricing_note, width=max(18, width - 2), initial_indent="  ", subsequent_indent="  "))
@@ -1684,8 +1665,8 @@ def render_models(usage, color=False, width=80, warnings=(), watch=False, refres
         lines.extend(paint(line, "1;92", color) for line in textwrap.wrap(
             save_notice, width=max(18, width - 2), initial_indent="  ", subsequent_indent="  "))
     if watch:
-        hint = "  K: back · S: models card"
-        lines.append(paint(hint if len(hint) <= width else "  K · S", "2", color))
+        hint = "  K: back · S: models card · T/W/M/A: sort"
+        lines.append(paint(hint if len(hint) <= width else "  K · S · T/W/M/A", "2", color))
         lines.append(countdown_line(refresh_in, width, color, new_version))
     return "\n".join(lines)
 
@@ -2519,7 +2500,7 @@ def main(argv=None):
         sys.stdout.write("\033[H\033[J" + render_loading(width, color) + "\n")
         sys.stdout.flush()
     try:
-        with interactive_mouse(watch) as input_fd:
+        with interactive_keys(watch) as input_fd:
             input_parser = TerminalInput()
             context, context_warnings = usage_context()
             pricing_note = context["pricing_note"]
@@ -2560,7 +2541,6 @@ def main(argv=None):
                 else:
                     deepseek_hint = "set DEEPSEEK_API_KEY"
                 deadline = started + 60
-                mouse_targets = {}
                 current_output = ""
                 current_width = width
 
@@ -2570,12 +2550,10 @@ def main(argv=None):
                         return render_models(usage, color=color, width=display_width,
                                              warnings=warnings, watch=watch, refresh_in=refresh_in,
                                              sort_period=sort_period, sort_desc=sort_desc,
-                                             mouse_enabled=input_fd is not None,
-                                             mouse_targets=mouse_targets, save_notice=save_notice,
+                                             save_notice=save_notice,
                                              pricing_note=pricing_note, new_version=new_version)
                     return render_home(usage, limits, api, color=color, width=display_width,
                                        warnings=warnings, watch=watch, refresh_in=refresh_in,
-                                       mouse_enabled=input_fd is not None, mouse_targets=mouse_targets,
                                        reset_credits=reset_credits, save_notice=save_notice,
                                        subscription_info=subscription_info, pricing_note=pricing_note,
                                        deepseek=deepseek, deepseek_hint=deepseek_hint, usd_cny=usd_cny,
@@ -2596,15 +2574,14 @@ def main(argv=None):
                     view = "detail" if view == "home" else "home"
                     redraw()
 
-                def sort_on_click(x, y):
+                def sort_by_key(char):
                     nonlocal sort_period, sort_desc
-                    if view != "detail" or y != mouse_targets.get("y"):
-                        return
-                    for left, right, period in mouse_targets.get("columns", []):
-                        if left <= x <= right:
-                            sort_period, sort_desc = next_sort(sort_period, sort_desc, period)
-                            redraw()
-                            return
+                    period = SORT_KEYS.get(char.lower())
+                    if period is None:
+                        return False
+                    sort_period, sort_desc = next_sort(sort_period, sort_desc, period)
+                    redraw()
+                    return True
 
                 def fresh_usage():
                     nonlocal usage
@@ -2657,6 +2634,24 @@ def main(argv=None):
                         warnings.append("Could not save reset card: %s" % exc)
                     redraw()
 
+                def handle_key(char):
+                    """Shortcuts are view-aware: `m` sorts here, saves a card at home."""
+                    key = char.lower()
+                    if view == "detail":
+                        if sort_by_key(key):
+                            return
+                        if key == "s":
+                            save_current()
+                        elif key == "k":
+                            toggle_models()
+                        return
+                    if key == "s":
+                        save_current()
+                    elif key == "m":
+                        save_reset_image()
+                    elif key == "k":
+                        toggle_models()
+
                 redraw()
                 if dt.date.today() != last_day:
                     # Keep the nightly archive going when the dashboard stays open.
@@ -2671,9 +2666,7 @@ def main(argv=None):
                 if not watch:
                     return 1 if warnings else 0
                 wait_for_refresh(deadline, width, color, input_fd=input_fd,
-                                 on_click=sort_on_click,
-                                 on_save_key=save_current, on_reset_key=save_reset_image,
-                                 on_models_key=toggle_models,
+                                 on_key=handle_key,
                                  input_parser=input_parser, new_version=new_version)
     except KeyboardInterrupt:
         if interactive:
