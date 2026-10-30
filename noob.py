@@ -37,7 +37,7 @@ from noob_usage import PERIODS as USAGE_PERIODS, UsageLedger
 # Release version, shown at the bottom-right of the dashboard. Every change
 # bumps the middle number unless the request says otherwise:
 # 0.1.0 -> 0.2.0 -> 0.3.0 ...
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 
 API_BASE = "https://api.openai.com/v1"
@@ -1588,10 +1588,17 @@ def render_home(usage, limits, api=None, color=False, width=80, warnings=(), wat
         lines.extend(textwrap.wrap("No account data available", width=max(18, width - 2),
                                    initial_indent="  ", subsequent_indent="  "))
     lines.append("  " + paint("TOTAL", "1", color))
+    total_costs = cost_pairs(usage["totals"])
+    total_tokens = token_pairs(usage["totals"])
+    total_widths = [max(len("%s %s" % total_costs[index]),
+                        len("%s %s" % total_tokens[index]))
+                    for index in range(len(PERIODS))]
     lines.extend(group_lines([
-        summary_lines("cost", cost_pairs(usage["totals"]), width, color, accent="today"),
-        summary_lines("tokens", token_pairs(usage["totals"]), width, color,
-                      value_style="2", key_style="2", uppercase=False),
+        summary_lines("cost", total_costs, width, color, accent="today",
+                      column_widths=total_widths),
+        summary_lines("tokens", total_tokens, width, color,
+                      value_style="2", key_style="2", uppercase=False,
+                      column_widths=total_widths),
     ]))
     if pricing_note:
         lines.extend(paint(line, "2", color) for line in textwrap.wrap(

@@ -1240,6 +1240,27 @@ class NoobTest(unittest.TestCase):
         fallback_index = next(i for i, line in enumerate(fallback) if "DEEPSEEK" in line)
         self.assertGreater(fallback_index, platform_index)
 
+    def test_total_cost_and_token_separators_share_columns(self):
+        values = {
+            "day": (10.89, 57_030_000),
+            "week": (158.51, 672_560_000),
+            "month": (423.71, 1_973_480_000),
+            "all": (468.86, 2_080_670_000),
+        }
+        source = {}
+        for period, (cost, tokens) in values.items():
+            row = noob.empty_local_row()
+            row.update({"input": tokens - 1000, "output": 1000, "estimate": cost})
+            source[period] = {"gpt-6-sol": row}
+        usage = noob.build_usage([("Codex", source)])
+        lines = noob.render_home(usage, {}, width=96).splitlines()
+        cost_line = next(line for line in lines if line.strip().startswith("COST"))
+        token_line = next(line for line in lines if line.strip().startswith("tokens"))
+        cost_separators = [index for index, char in enumerate(cost_line) if char == "·"]
+        token_separators = [index for index, char in enumerate(token_line) if char == "·"]
+        self.assertEqual(len(cost_separators), 3)
+        self.assertEqual(cost_separators, token_separators)
+
     def test_opencode_usage_filters_deepseek_and_merges(self):
         payload = {"data": {"models": [
             {"model": {"id": "deepseek-flash", "providerID": "deepseek"}, "steps": 3,
