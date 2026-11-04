@@ -132,11 +132,15 @@ noob --uninstall-daily        # remove the schedule
 noob --daily-cards            # capture right now
 ```
 
-Files are named `noobsolo-usage-YYYYMMDD.png` and `noobsolo-models-YYYYMMDD.png`,
-so re-running on the same day replaces that day's pair instead of piling up
-duplicates. Pass `--daily-dir DIR` (on its own or together with
+A midnight capture archives the day that just ended, so the 00:00 run on
+5 November writes the card pair for 4 November with that day's full usage.
+Later schedules such as `23:50` archive the current day, and a dashboard left
+open across midnight captures the finished day on its own too.
+
+Files are named `noobsolo-usage-YYYYMMDD.png` and `noobsolo-models-YYYYMMDD.png`
+after the day they describe, so re-running replaces that day's pair instead of
+piling up duplicates. Pass `--daily-dir DIR` (on its own or together with
 `--install-daily`) to archive somewhere other than Downloads.
-A dashboard left open across midnight captures on its own too.
 
 The schedule is a launchd agent at `~/Library/LaunchAgents/com.noob.dailycards.plist`;
 its output goes to `~/Library/Logs/noob-daily.log`. If the Mac is asleep at
