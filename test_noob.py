@@ -1569,10 +1569,12 @@ class NoobTest(unittest.TestCase):
         limits = {"rateLimits": {"limitId": "codex", "primary": {
             "usedPercent": 20, "windowDurationMins": 300}, "secondary": {
             "usedPercent": 61, "windowDurationMins": 10080}}}
-        usage_path = Path("/tmp/archive/noobsolo-usage-20261021.png")
-        models_path = Path("/tmp/archive/noobsolo-models-20261021.png")
+        usage_path = Path("/tmp/archive/noobsolo-usage-20261020.png")
+        models_path = Path("/tmp/archive/noobsolo-models-20261020.png")
         moment = dt.datetime(2026, 10, 21, 0, 0, 5,
                              tzinfo=dt.timezone(dt.timedelta(hours=8)))
+        reported = dt.datetime(2026, 10, 20, 0, 0,
+                               tzinfo=dt.timezone(dt.timedelta(hours=8)))
         with mock.patch.object(noob, "scan_local_sessions", return_value=source), \
              mock.patch.object(noob, "codex_data", return_value=limits), \
              mock.patch.object(noob, "save_card", return_value=usage_path) as card, \
@@ -1581,12 +1583,26 @@ class NoobTest(unittest.TestCase):
         self.assertEqual(paths, [usage_path, models_path])
         self.assertEqual(warnings, [])
         self.assertEqual(card.call_args.kwargs["directory"], Path("/tmp/archive"))
-        self.assertEqual(card.call_args.kwargs["now"], moment)
-        self.assertEqual(card.call_args.kwargs["name"], "noobsolo-usage-20261021.png")
+        self.assertEqual(card.call_args.kwargs["now"], reported)
+        self.assertEqual(card.call_args.kwargs["name"], "noobsolo-usage-20261020.png")
         self.assertEqual(card.call_args.kwargs["quotas"], {300: (80, "32"), 10080: (39, "33")})
-        self.assertEqual(models.call_args.kwargs["name"], "noobsolo-models-20261021.png")
+        self.assertEqual(models.call_args.kwargs["name"], "noobsolo-models-20261020.png")
         self.assertEqual(models.call_args.kwargs["sort_period"], "month")
         self.assertTrue(models.call_args.kwargs["sort_desc"])
+
+    def test_daily_cards_captures_newer_usage_but_reports_the_previous_day(self):
+        moment = dt.datetime(2026, 10, 21, 6, 0, 5,
+                             tzinfo=dt.timezone(dt.timedelta(hours=8)))
+        empty_usage = {"totals": {}, "models": {}, "platforms": []}
+        with mock.patch.object(noob, "codex_data", return_value={}), \
+             mock.patch.object(noob, "save_card", return_value=Path("/tmp/a.png")), \
+             mock.patch.object(noob, "save_models_card", return_value=Path("/tmp/b.png")), \
+             mock.patch.object(noob, "collect_usage", return_value=empty_usage) as collect:
+            noob.daily_cards(directory="/tmp/archive", now=moment, previous=True)
+        self.assertEqual(collect.call_args.kwargs["now"],
+                         dt.datetime(2026, 10, 20, 0, 0,
+                                     tzinfo=dt.timezone(dt.timedelta(hours=8))))
+        self.assertEqual(collect.call_args.kwargs["capture_now"], moment)
 
     def test_daily_cards_cli_prints_both_paths(self):
         first = Path("/tmp/archive/noobsolo-usage-20261021.png")
@@ -1595,9 +1611,16 @@ class NoobTest(unittest.TestCase):
         with mock.patch.object(noob, "daily_cards", return_value=([first, second], [])) as capture, \
              mock.patch.object(noob.sys, "stdout", output):
             self.assertEqual(noob.main(["--daily-cards", "--daily-dir", "/tmp/archive"]), 0)
-        capture.assert_called_once_with("/tmp/archive")
+        capture.assert_called_once_with("/tmp/archive", previous=None)
         self.assertIn("Saved: %s" % first, output.getvalue())
         self.assertIn("Saved: %s" % second, output.getvalue())
+
+    def test_daily_cards_cli_can_archive_the_previous_day(self):
+        output = io.StringIO()
+        with mock.patch.object(noob, "daily_cards", return_value=([], [])) as capture, \
+             mock.patch.object(noob.sys, "stdout", output):
+            self.assertEqual(noob.main(["--daily-cards", "--daily-previous"]), 0)
+        capture.assert_called_once_with(None, previous=True)
 
     def test_install_daily_schedule_writes_launch_agent(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -1617,8 +1640,14 @@ class NoobTest(unittest.TestCase):
         self.assertIn("/usr/bin", contents["EnvironmentVariables"]["PATH"].split(os.pathsep))
         self.assertFalse(contents["RunAtLoad"])
         self.assertEqual(control.call_count, 2)
-        self.assertEqual(noob.launch_plist(directory="/tmp/archive")["ProgramArguments"][-2:],
-                         ["--daily-dir", "/tmp/archive"])
+        self.assertEqual(noob.launch_plist(directory="/tmp/archive")["ProgramArguments"][-3:],
+                         ["--daily-previous", "--daily-dir", "/tmp/archive"])
+
+    def test_launch_agent_only_archives_the_previous_day_at_midnight(self):
+        midnight = noob.launch_plist(0, 0)["ProgramArguments"]
+        evening = noob.launch_plist(23, 30)["ProgramArguments"]
+        self.assertIn("--daily-previous", midnight)
+        self.assertNotIn("--daily-previous", evening)
 
     def test_launch_agent_reuses_the_running_python(self):
         with mock.patch.object(noob.sys, "executable", "/opt/conda/bin/python3.14"):
@@ -1672,7 +1701,7 @@ class NoobTest(unittest.TestCase):
              mock.patch.object(noob, "daily_cards", return_value=(saved, [])) as capture, \
              mock.patch.object(noob, "wait_for_refresh", side_effect=KeyboardInterrupt):
             self.assertEqual(noob.main([]), 0)
-        capture.assert_called_once_with()
+        capture.assert_called_once_with(previous=True)
         self.assertIn("Saved nightly cards", terminal.getvalue())
 
     def test_parse_clock_rejects_bad_times(self):

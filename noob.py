@@ -38,7 +38,7 @@ from noob_usage import PERIODS as USAGE_PERIODS, UsageLedger
 # Release version, shown at the bottom-right of the dashboard. Every change
 # bumps the middle number unless the request says otherwise:
 # 0.1.0 -> 0.2.0 -> 0.3.0 ...
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 
 API_BASE = "https://api.openai.com/v1"
@@ -2175,13 +2175,18 @@ def live_usage_sources(context, warnings):
     return sources, opencode_rows, pi_rows
 
 
-def collect_usage(context, warnings, ledger=None, now=None):
-    """Read the ledger, falling back to live logs when it has no data yet."""
+def collect_usage(context, warnings, ledger=None, now=None, capture_now=None):
+    """Read the ledger, falling back to live logs when it has no data yet.
+
+    `now` sets the reporting window while `capture_now` (default: `now`) says
+    how far the logs should be read, so an archive can describe an earlier day
+    without losing usage recorded after it.
+    """
     now = now or dt.datetime.now().astimezone()
     opencode_rows = None
     pi_rows = None
     if ledger is not None:
-        capture_warnings, files = capture_usage(ledger, context, now)
+        capture_warnings, files = capture_usage(ledger, context, capture_now or now)
         warnings.extend(capture_warnings)
         if ledger.has_events():
             sources = ledger_usage_sources(ledger, now, files)
@@ -2208,16 +2213,37 @@ def daily_cards_dir(directory=None):
     return Path.home() / "Downloads" / "noob-daily"
 
 
-def daily_cards(directory=None, now=None):
-    """Save today's home usage card and models detail card; return (paths, warnings)."""
+def daily_report_now(now, previous=None):
+    """The moment the archived cards describe.
+
+    The nightly agent starts at midnight, so by the time it runs "today" has no
+    usage yet. Those cards archive the day that just ended instead. `previous`
+    is explicit for the launchd agent (which may fire late after sleep) and the
+    dashboard rollover; left as None it also covers agents installed before the
+    flag existed, which always ran inside the midnight hour.
+    """
+    if previous is None:
+        previous = now.hour == 0
+    if previous:
+        day = now.date() - dt.timedelta(days=1)
+        return dt.datetime.combine(day, dt.time.min, tzinfo=now.tzinfo)
+    return now
+
+
+def daily_cards(directory=None, now=None, previous=None):
+    """Save the archive card pair for the reporting day; return (paths, warnings)."""
     now = now or dt.datetime.now().astimezone()
+    report_now = daily_report_now(now, previous)
     directory = daily_cards_dir(directory)
-    stamp = now.strftime("%Y%m%d")
+    stamp = report_now.strftime("%Y%m%d")
     warnings = []
     context, context_warnings = usage_context()
     warnings.extend(context_warnings)
     ledger = UsageLedger() if usage_ledger_enabled() else None
-    usage = collect_usage(context, warnings, ledger=ledger, now=now)
+    # Capture everything up to the real clock, but aggregate only through the
+    # reporting day so a late run never mixes the new day into the archive.
+    usage = collect_usage(context, warnings, ledger=ledger, now=report_now,
+                          capture_now=now)
     try:
         limits = codex_data()
     except (OSError, RuntimeError, ValueError) as exc:
@@ -2230,10 +2256,11 @@ def daily_cards(directory=None, now=None):
         except (RuntimeError, ValueError) as exc:
             warnings.append("DeepSeek balance query failed: %s" % exc)
     paths = [
-        save_card(usage, directory=directory, now=now, quotas=card_quotas(limits),
+        save_card(usage, directory=directory, now=report_now,
+                  quotas=card_quotas(limits),
                   deepseek=deepseek_money_text(balance, context["usd_cny"]),
                   name="noobsolo-usage-%s.png" % stamp),
-        save_models_card(usage, directory=directory, now=now, sort_period="month",
+        save_models_card(usage, directory=directory, now=report_now, sort_period="month",
                          sort_desc=True, name="noobsolo-models-%s.png" % stamp),
     ]
     return paths, warnings
@@ -2263,6 +2290,10 @@ def launch_plist(hour=0, minute=0, python=None, script=None, log=None, directory
     script = str(Path(script or __file__).resolve())
     log = str(Path(log) if log else Path.home() / DAILY_LOG)
     arguments = [python, script, "--daily-cards"]
+    if hour == 0:
+        # Midnight captures run after the day changed: archive the day that
+        # ended. Passing it explicitly keeps late wake-ups on the same day.
+        arguments.append("--daily-previous")
     if directory:
         arguments.extend(["--daily-dir", str(Path(directory).expanduser())])
     path_entries = []
@@ -2493,7 +2524,9 @@ def main(argv=None):
     parser.add_argument("--api", action="store_true", help="also query API organization billing (requires OPENAI_ADMIN_KEY)")
     parser.add_argument("--api-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--daily-cards", action="store_true",
-                        help="save today's usage card and models card, then exit")
+                        help="save the usage and models cards, then exit")
+    parser.add_argument("--daily-previous", action="store_true",
+                        help="with --daily-cards, archive the day that just ended")
     parser.add_argument("--daily-dir", metavar="DIR",
                         help="archive folder for --daily-cards (default ~/Downloads/noob-daily)")
     parser.add_argument("--install-daily", nargs="?", const="00:00", metavar="HH:MM",
@@ -2535,8 +2568,9 @@ def main(argv=None):
         print("Nightly cards at %s: %s" % (args.install_daily, destination))
         return 0
     if args.daily_cards:
+        previous = True if args.daily_previous else None
         try:
-            paths, daily_warnings = daily_cards(args.daily_dir)
+            paths, daily_warnings = daily_cards(args.daily_dir, previous=previous)
         except (OSError, RuntimeError, ValueError) as exc:
             print("Could not save the daily cards: %s" % exc, file=sys.stderr)
             return 1
@@ -2720,7 +2754,8 @@ def main(argv=None):
                     # Keep the nightly archive going when the dashboard stays open.
                     last_day = dt.date.today()
                     try:
-                        paths, nightly_warnings = daily_cards()
+                        # The day just rolled over, so archive the finished one.
+                        paths, nightly_warnings = daily_cards(previous=True)
                         warnings.extend(nightly_warnings)
                         save_notice = "Saved nightly cards: %s" % paths[0].parent
                     except (OSError, RuntimeError, ValueError) as exc:
