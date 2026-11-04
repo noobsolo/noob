@@ -2,6 +2,7 @@
 """Subscription quotas, API balances, and local API-price-equivalent usage at a glance."""
 
 import argparse
+import calendar
 import datetime as dt
 import fcntl
 import hashlib
@@ -37,7 +38,7 @@ from noob_usage import PERIODS as USAGE_PERIODS, UsageLedger
 # Release version, shown at the bottom-right of the dashboard. Every change
 # bumps the middle number unless the request says otherwise:
 # 0.1.0 -> 0.2.0 -> 0.3.0 ...
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 
 API_BASE = "https://api.openai.com/v1"
@@ -67,6 +68,7 @@ PACE_MARKER_COLOR = "1;38;2;46;139;87"
 PLATFORM_COLORS = {"CODEX": "1;38;2;16;163;127", "DEEPSEEK": "1;38;2;77;107;254"}
 PLATFORM_ICONS = {"CODEX": "◆", "DEEPSEEK": "●"}
 SUBSCRIPTION_INFO_PATH = Path(__file__).with_name("subscription_info.json")
+DEFAULT_MONTHLY_PRICE = 20.0
 DEEPSEEK_BALANCE_URL = "https://api.deepseek.com/user/balance"
 DEEPSEEK_MODELS_URL = "https://api.deepseek.com/models"
 DEEPSEEK_MODELS_PATH = Path(__file__).with_name("deepseek_models.json")
@@ -1048,6 +1050,55 @@ def load_subscription_info():
         return None
 
 
+def add_months(day, months):
+    """Shift a date by whole calendar months, clamping the day to month end."""
+    index = day.month - 1 + months
+    year = day.year + index // 12
+    month = index % 12 + 1
+    last = calendar.monthrange(year, month)[1]
+    return dt.date(year, month, min(day.day, last))
+
+
+def next_renewal_date(renewal, today=None):
+    """The first monthly renewal on or after today, anchored to `renewal`."""
+    today = dt.date.today() if today is None else today
+    if renewal >= today:
+        return renewal
+    months = max(1, (today.year - renewal.year) * 12 + today.month - renewal.month)
+    candidate = add_months(renewal, months)
+    while candidate < today:
+        months += 1
+        candidate = add_months(renewal, months)
+    return candidate
+
+
+def subscription_periods(start, today=None):
+    """Billed monthly periods so far, counting the one that began on `start`."""
+    if start is None:
+        return 0
+    today = dt.date.today() if today is None else today
+    if start > today:
+        return 0
+    periods = 1
+    while add_months(start, periods) <= today:
+        periods += 1
+    return periods
+
+
+def subscription_cost(info, start, today=None):
+    """USD paid for the subscription so far, or None when it cannot be known."""
+    if start is None:
+        return None
+    try:
+        price = float(info.get("monthly_price", DEFAULT_MONTHLY_PRICE))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not math.isfinite(price) or price < 0:
+        return None
+    periods = subscription_periods(start, today)
+    return price * periods if periods else None
+
+
 def subscription_text(info, available=80, today=None):
     """Renewal summary sized for `available` columns, or None when undated."""
     if not isinstance(info, dict):
@@ -1057,22 +1108,22 @@ def subscription_text(info, available=80, today=None):
         renewal = dt.date.fromisoformat(info["renewal_date"])
     except (KeyError, TypeError, ValueError):
         return None
+    renewal = next_renewal_date(renewal, today)
     try:
         start = dt.date.fromisoformat(info["started_on"])
     except (KeyError, TypeError, ValueError):
         start = None
     days = (today - start).days if start and start <= today else None
     days_text = "%d" % days if days is not None else "—"
-    if renewal >= today:
-        label = "%s  ·  subscribed %s days" % (renewal.strftime("%b %d, %Y").lower(), days_text)
-        if len(label) > available:
-            label = "%s  ·  %s days" % (renewal.strftime("%m/%d/%y"), days_text)
-        if len(label) > available:
-            label = "%s  ·  %sd" % (renewal.strftime("%m/%d"), days_text)
-    else:
-        label = "date unverified  ·  subscribed %s days" % days_text
-        if len(label) > available:
-            label = "unverified  ·  %sd" % days_text
+    cost = subscription_cost(info, start, today)
+    suffix = ("  ·  cost $%.2f" % cost) if cost is not None else ""
+    label = "%s  ·  subscribed %s days%s" % (renewal.strftime("%b %d, %Y").lower(),
+                                             days_text, suffix)
+    if len(label) > available:
+        label = "%s  ·  %s days%s" % (renewal.strftime("%m/%d/%y"), days_text, suffix)
+    if len(label) > available:
+        compact = "  ·  $%.2f" % cost if cost is not None else ""
+        label = "%s  ·  %sd%s" % (renewal.strftime("%m/%d"), days_text, compact)
     return clipped(label, max(4, available))
 
 

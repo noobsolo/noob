@@ -162,9 +162,14 @@ OpenAI API bill — set `OPENAI_ADMIN_KEY`, then run `noob --api`.
 - Codex usage: `~/.codex/sessions` logs
 - Prices: OpenAI's pricing page (cached in `pricing_cache.json`)
 - DeepSeek usage: local `opencode` and `pi` logs, priced with DeepSeek's CNY table
-- Renewal date: `subscription_info.json`
+- Renewal date and subscription cost: `subscription_info.json`. The stored
+  `renewal_date` is an anchor; the dashboard rolls it forward by whole months
+  until it is on or after today. `cost` is `monthly_price` (default $20) times
+  the monthly periods billed since `started_on`, counting the first one.
 
 Costs are API-price equivalents for your tokens, not what you were actually billed.
+The `cost` on the renews row is the one exception: it is what you paid for the
+subscription itself.
 
 ## Files
 
@@ -173,7 +178,7 @@ Costs are API-price equivalents for your tokens, not what you were actually bill
 - `noob_pricing.py` — price tables
 - `noob_card.py` — usage card
 - `noob_reset_card.py` — reset card
-- `subscription_info.json` — renewal date
+- `subscription_info.json` — renewal anchor, start date, and monthly price
 
 ## Sources
 
