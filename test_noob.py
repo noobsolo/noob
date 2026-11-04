@@ -778,21 +778,59 @@ class NoobTest(unittest.TestCase):
         output = noob.render_models(noob.build_usage([("Codex", source)]), width=80)
         self.assertIn("MODEL", output.splitlines()[3])
 
+    def test_renewal_date_rolls_forward_to_the_next_monthly_period(self):
+        renewal = dt.date(2026, 10, 22)
+        self.assertEqual(noob.next_renewal_date(renewal, dt.date(2026, 10, 9)), renewal)
+        self.assertEqual(noob.next_renewal_date(renewal, renewal), renewal)
+        self.assertEqual(noob.next_renewal_date(renewal, dt.date(2026, 10, 23)),
+                         dt.date(2026, 11, 22))
+        self.assertEqual(noob.next_renewal_date(renewal, dt.date(2027, 2, 1)),
+                         dt.date(2027, 2, 22))
+        # A month-end anchor clamps and then returns to the original day.
+        self.assertEqual(noob.next_renewal_date(dt.date(2026, 1, 31), dt.date(2026, 2, 15)),
+                         dt.date(2026, 2, 28))
+        self.assertEqual(noob.next_renewal_date(dt.date(2026, 1, 31), dt.date(2026, 3, 1)),
+                         dt.date(2026, 3, 31))
+
+    def test_subscription_cost_counts_periods_paid_in_advance(self):
+        info = {"started_on": "2026-09-22", "monthly_price": 20}
+        self.assertEqual(noob.subscription_cost(info, dt.date(2026, 9, 22), dt.date(2026, 9, 22)),
+                         20.0)
+        self.assertEqual(noob.subscription_cost(info, dt.date(2026, 9, 22), dt.date(2026, 10, 22)),
+                         40.0)
+        self.assertEqual(noob.subscription_cost(info, dt.date(2026, 9, 22), dt.date(2026, 11, 21)),
+                         40.0)
+        self.assertEqual(noob.subscription_cost(info, dt.date(2026, 9, 22), dt.date(2026, 11, 22)),
+                         60.0)
+        self.assertEqual(noob.subscription_cost(info, dt.date(2026, 9, 22), dt.date(2027, 9, 22)),
+                         260.0)
+        self.assertEqual(noob.subscription_cost({"started_on": "2026-09-22"},
+                                                dt.date(2026, 9, 22), dt.date(2026, 9, 22)),
+                         20.0)
+        self.assertIsNone(noob.subscription_cost(info, None, dt.date(2026, 9, 22)))
+        self.assertIsNone(noob.subscription_cost(
+            {"started_on": "2026-09-22", "monthly_price": "free"},
+            dt.date(2026, 9, 22), dt.date(2026, 9, 22)))
+
     def test_subscription_text_appears_in_the_codex_section(self):
         info = {"renewal_date": "2026-10-22", "started_on": "2026-09-22"}
         today = dt.date(2026, 10, 9)
         self.assertEqual(noob.subscription_text(info, 80, today=today),
-                         "oct 22, 2026  ·  subscribed 17 days")
+                         "oct 22, 2026  ·  subscribed 17 days  ·  cost $20.00")
         for available in (20, 32, 52, 80):
             with self.subTest(available=available):
                 self.assertLessEqual(len(noob.subscription_text(info, available, today=today)),
                                      available)
-        self.assertIn("subscribed — days", noob.subscription_text(
-            {"renewal_date": "2026-10-22", "started_on": None}, 80, today=today))
-        self.assertIn("unverified", noob.subscription_text(
-            info, 80, today=dt.date(2026, 10, 23)))
-        self.assertIn("subscribed 18 days", noob.subscription_text(
+        self.assertEqual(noob.subscription_text(info, 80, today=dt.date(2026, 10, 23)),
+                         "nov 22, 2026  ·  subscribed 31 days  ·  cost $40.00")
+        self.assertIn("subscribed 18 days  ·  cost $20.00", noob.subscription_text(
             info, 80, today=dt.date(2026, 10, 10)))
+        self.assertEqual(noob.subscription_text(
+            {"renewal_date": "2026-10-22", "started_on": None}, 80, today=today),
+            "oct 22, 2026  ·  subscribed — days")
+        # Narrow rows keep the cost even after dropping the "cost" label.
+        self.assertEqual(noob.subscription_text(info, 29, today=dt.date(2026, 10, 23)),
+                         "11/22  ·  31d  ·  $40.00")
 
         credits = {"availableCount": 1, "credits": [
             {"status": "available", "expiresAt": dt.datetime(2026, 10, 23).timestamp()}]}
@@ -804,7 +842,7 @@ class NoobTest(unittest.TestCase):
         codex = next(i for i, line in enumerate(lines) if "CODEX" in line and "RESET" not in line)
         renewal = next(i for i, line in enumerate(lines) if "renews" in line)
         self.assertLess(codex, renewal)
-        self.assertIn("oct 22, 2026  ·  subscribed 17 days", lines[renewal])
+        self.assertIn("oct 22, 2026  ·  subscribed 17 days  ·  cost $20.00", lines[renewal])
         source = {"day": {"m": {"input": 1, "cached": 0, "write": 0, "output": 0,
                                 "estimate": 1.0, "unpriced": 0, "calls": 1}}}
         detail = noob.render_models(noob.build_usage([("Codex", source)]), width=80)
