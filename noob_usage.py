@@ -22,6 +22,7 @@ from pathlib import Path
 SCHEMA = 1
 PERIODS = ("day", "week", "month", "all")
 TOKEN_FIELDS = ("input", "cached", "write", "output")
+CODEX_SOURCES = (("codex", "Codex CLI"), ("opencode", "OpenCode"))
 
 
 def default_directory():
@@ -43,7 +44,7 @@ def empty_state():
         "version": SCHEMA,
         "codex": {"sessions": {}},
         "pi": {"files": {}},
-        "opencode": {"days": {}},
+        "opencode": {"days": {}, "codex_days": {}, "codex_through": None},
         "baseline_only": False,
     }
 
@@ -72,7 +73,8 @@ def _clean_state(raw):
         value = raw.get(section)
         if isinstance(value, dict):
             state[section].update(value)
-    for section, key in (("codex", "sessions"), ("pi", "files"), ("opencode", "days")):
+    for section, key in (("codex", "sessions"), ("pi", "files"), ("opencode", "days"),
+                         ("opencode", "codex_days")):
         if not isinstance(state[section].get(key), dict):
             state[section][key] = {}
     state["baseline_only"] = bool(raw.get("baseline_only"))

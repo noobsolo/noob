@@ -7,7 +7,8 @@ A terminal dashboard for your Codex and DeepSeek usage — quota bars, spend by 
 ## What it shows
 
 - Codex 5H / WEEK quota bars (remaining %)
-- Cost per model: today, week, month, all (press `k`)
+- Home cost breakdown: Codex (Codex CLI, OpenCode) and DeepSeek (OpenCode, pi)
+- Cost per model across clients: today, week, month, all (press `k`)
 - Token totals: today, week, month, all
 - Rate-limit reset credits and their expiry
 - DeepSeek balance (optional)
@@ -109,6 +110,10 @@ A later price change therefore never rewrites an older cost. The ledger also
 keeps history after Codex compresses, archives, or deletes a session, and after
 OpenCode/pi clean up their logs. The first run backfills the logs that still
 exist; those older days are priced with the prices available at backfill time.
+Existing ledgers also backfill available OpenAI usage from the OpenCode stats
+endpoint once. OpenCode reports aggregate tokens, so its OpenAI costs are
+reference estimates at Standard short-context rates, not extra subscription
+charges. The official Codex quota bars still come from the Codex account.
 
 The dashboard is unchanged: it aggregates the ledger into the same day/week/
 month/all figures and model list as before.

@@ -45,6 +45,9 @@ class NoobTest(unittest.TestCase):
         opencode = mock.patch.object(noob, "opencode_usage", return_value={})
         opencode.start()
         self.addCleanup(opencode.stop)
+        opencode_codex = mock.patch.object(noob, "opencode_codex_usage", return_value={})
+        opencode_codex.start()
+        self.addCleanup(opencode_codex.stop)
         # DeepSeek prices and the FX rate are fetched at launch; keep tests offline.
         self.real_fetch_usd_cny = noob.fetch_usd_cny
         self.real_deepseek_prices = noob.deepseek_prices
@@ -1092,7 +1095,7 @@ class NoobTest(unittest.TestCase):
                 "estimate": 0.02, "estimate_cny": 0.142}
         flash = {"input": 100, "cached": 0, "write": 0, "output": 10, "calls": 1,
                  "estimate": 0.5, "estimate_cny": 3.55}
-        merged = noob.merge_deepseek_usage(
+        merged = noob.merge_usage_rows(
             {"day": {"DeepSeek-V4-Pro": pro}},
             {"day": {"DeepSeek-V4-Pro": more, "DeepSeek-V4.1-Flash": flash}})
         self.assertEqual(merged["day"]["DeepSeek-V4-Pro"]["input"], 30)

@@ -28,9 +28,9 @@ def context():
 
 
 def codex_event(day, model="gpt-6.1-sol", input_tokens=1000, cached=0, output=100,
-                cost=0.01, backfill=False):
+                cost=0.01, backfill=False, source="codex"):
     return {
-        "at": NOW.isoformat(), "day": day, "platform": "Codex", "source": "codex",
+        "at": NOW.isoformat(), "day": day, "platform": "Codex", "source": source,
         "model": model, "display": model, "kind": "short",
         "tokens": {"input": input_tokens, "cached": cached, "write": 0, "output": output},
         "cost": cost, "currency": "USD", "unpriced": 0, "calls": 1,
@@ -167,6 +167,7 @@ class CodexCaptureTest(unittest.TestCase):
     def capture(self, ledger):
         with mock.patch.dict(os.environ, {"CODEX_HOME": str(self.root)}), \
              mock.patch.object(noob, "capture_pi_usage", return_value=([], [])), \
+             mock.patch.object(noob, "capture_opencode_codex_usage", return_value=([], [])), \
              mock.patch.object(noob, "capture_opencode_usage", return_value=([], [])):
             return noob.capture_usage(ledger, context(), NOW)
 
@@ -294,8 +295,146 @@ class DeepSeekCaptureTest(unittest.TestCase):
                     "deepseek-flash|deepseek-flash|offpeak"]["input"], 1500)
             stats.assert_called()
 
+    def test_opencode_codex_backfills_existing_ledger_without_repricing(self):
+        now = NOW.astimezone()
+        today = now.date().isoformat()
+        yesterday = (now.date() - dt.timedelta(days=1)).isoformat()
+        midnight = int(now.replace(hour=0, minute=0, second=0).timestamp() * 1000)
+        usage = 500_000
+        model = "gpt-6.2-sol"
+
+        def stats(start, end):
+            if start == 0:
+                return {"activity": [{"date": yesterday}, {"date": today}]}
+            if end < midnight:
+                return {}
+            return {"models": [
+                {"model": {"id": model, "providerID": "openai", "variant": "high"},
+                 "tokens": {"input": usage, "output": 100, "reasoning": 50,
+                            "cache": {"read": 20, "write": 5}}, "steps": 2},
+                {"model": {"id": model, "providerID": "openai", "variant": "low"},
+                 "tokens": {"input": 50}, "steps": 1},
+                {"model": {"id": model, "providerID": "deepseek"},
+                 "tokens": {"input": 100}},
+                {"model": {"id": "codex-auto-review", "providerID": "openai"},
+                 "tokens": {"input": 100}},
+            ]}
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(noob.shutil, "which", return_value="/usr/bin/opencode"), \
+             mock.patch.object(noob, "capture_codex_usage", return_value=([], [], 0)), \
+             mock.patch.object(noob, "capture_pi_usage", return_value=([], [])), \
+             mock.patch.object(noob, "capture_opencode_usage", return_value=([], [])), \
+             mock.patch.object(noob, "opencode_stats", side_effect=stats) as query:
+            ledger = UsageLedger(tmp)
+            with ledger.transaction() as (state, events):
+                events.append(codex_event(yesterday, model=model, cost=2.0))
+                state["opencode"]["days"][yesterday] = {"existing-deepseek-entries": {}}
+            self.assertEqual(noob.capture_usage(ledger, context(), now), ([], 0))
+            original = ledger.read_events()
+            imported = [event for event in original if event["source"] == "opencode"]
+            self.assertEqual({event["day"] for event in imported}, {yesterday, today})
+            self.assertTrue(all(event["backfill"] for event in imported))
+            self.assertEqual(imported[-1]["tokens"], {
+                "input": 500075, "cached": 20, "write": 5, "output": 150})
+            self.assertEqual(imported[-1]["calls"], 3)
+            self.assertAlmostEqual(imported[-1]["cost"], 1.0016145)
+            self.assertEqual(ledger._load_state()["opencode"]["days"][yesterday],
+                             {"existing-deepseek-entries": {}})
+            query.reset_mock()
+            noob.capture_usage(ledger, context(), now)
+            self.assertEqual(ledger.read_events(), original)
+            self.assertEqual(query.call_count, 1)
+            self.assertEqual(query.call_args.args[0], midnight)
+            usage = 100
+            noob.capture_usage(ledger, context(), now)
+            self.assertEqual(ledger.read_events(), original)
+            usage = 510_000
+            with mock.patch.dict(noob.RATES, {model: (4.0, 0.1, 2.5, 10.0)}):
+                noob.capture_usage(ledger, context(), now)
+            latest = ledger.read_events()
+            self.assertEqual(latest[:-1], original)
+            self.assertEqual(latest[-1]["tokens"]["input"], 10_000)
+            self.assertAlmostEqual(latest[-1]["cost"], 0.04)
+            self.assertFalse(latest[-1]["backfill"])
+
+    def test_opencode_codex_uses_short_reference_rates_and_marks_missing_prices(self):
+        panel = {"models": [
+            {"model": {"id": "gpt-6.2-sol", "providerID": "openai"},
+             "tokens": {"input": 500_000, "output": 100}},
+            {"model": {"id": "unpriced-model", "providerID": "openai"},
+             "tokens": {"input": 12, "cache": {"read": 3}, "reasoning": 5}},
+        ]}
+        with mock.patch.object(noob, "opencode_stats", return_value=panel):
+            live = noob.opencode_codex_usage(NOW)
+        self.assertAlmostEqual(live["all"]["gpt-6.2-sol"]["estimate"], 1.001)
+        self.assertEqual(live["all"]["unpriced-model"]["unpriced"], 20)
+
 
 class UiAdapterTest(unittest.TestCase):
+    def test_codex_sources_split_on_home_and_merge_on_both_model_views(self):
+        import noob_card
+        import xml.etree.ElementTree as ET
+
+        model = "gpt-6.2-sol"
+        day = NOW.date().isoformat()
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(noob, "capture_usage", return_value=([], 2)):
+            ledger = UsageLedger(tmp)
+            with ledger.transaction() as (_, events):
+                events.extend([codex_event(day, model=model, cost=1.25),
+                               codex_event(day, model=model, cost=2.35, source="opencode"),
+                               deepseek_event(day, cost_cny=8.00),
+                               deepseek_event(day, source="pi", cost_cny=2.00)])
+            usage = noob.collect_usage(context(), [], ledger=ledger, now=NOW)
+
+        self.assertEqual([item["name"] for item in usage["platforms"]], ["Codex", "DeepSeek"])
+        self.assertAlmostEqual(usage["models"][model]["day"]["cost"], 3.60)
+        self.assertEqual(usage["models"][model]["day"]["tokens"], 2200)
+        self.assertAlmostEqual(usage["totals"]["day"]["cost"], 3.60 + 10.00 / 7.1)
+        for width in (32, 80, 120):
+            home = noob.render_home(usage, {}, width=width)
+            self.assertIn("Codex CLI", home)
+            self.assertIn("OpenCode", home)
+            self.assertIn("$3.60", home)
+            self.assertIn("$1.25", home)
+            self.assertIn("$2.35", home)
+            self.assertLessEqual(max(map(len, home.splitlines())), width)
+        models = noob.render_models(usage, width=120)
+        self.assertEqual(models.count(model), 1)
+        self.assertIn("$3.60", models)
+        self.assertNotIn("Codex CLI", models)
+        self.assertNotIn("OpenCode", models)
+        card = ET.fromstring(noob_card.card_svg(usage))
+        rows = list(card.find(".//*[@id='platform-rows']"))
+        self.assertEqual([row.text for row in rows[::4]],
+                         ["CODEX", "Codex CLI", "OpenCode", "DEEPSEEK", "opencode", "pi"])
+        self.assertEqual([row.text for row in rows[1:12:4]], ["$3.60", "$1.25", "$2.35"])
+        self.assertLessEqual(1244 + int(card.find(".//*[@id='card-footer']").get(
+            "transform").split(",")[1][:-1]), 1332)
+        models_card = noob_card.models_card_svg(usage)
+        self.assertEqual(models_card.lower().count(model), 1)
+        self.assertIn("$3.60", models_card)
+        self.assertNotIn("Codex CLI", models_card)
+        self.assertNotIn("OpenCode", models_card)
+
+    def test_live_codex_totals_combine_both_clients(self):
+        def source(cost):
+            return {"day": {"gpt-6.2-sol": {"estimate": cost, "input": 100}}}
+
+        with mock.patch.object(noob.shutil, "which", return_value="/usr/bin/opencode"), \
+             mock.patch.object(noob, "scan_local_sessions", return_value=source(1.25)), \
+             mock.patch.object(noob, "opencode_codex_usage", return_value=source(2.35)), \
+             mock.patch.object(noob, "opencode_usage", return_value={}), \
+             mock.patch.object(noob, "pi_usage", return_value={}):
+            warnings = []
+            usage = noob.collect_usage(context(), warnings, now=NOW)
+        self.assertFalse(warnings)
+        self.assertEqual(usage["platforms"][0]["currency"], "usd")
+        self.assertEqual(usage["codex_split"]["codex"]["usd"]["day"], 1.25)
+        self.assertEqual(usage["codex_split"]["opencode"]["usd"]["day"], 2.35)
+        self.assertAlmostEqual(usage["models"]["gpt-6.2-sol"]["day"]["cost"], 3.60)
+
     def test_ledger_rows_keep_every_window_when_one_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             ledger = UsageLedger(tmp)
