@@ -169,6 +169,7 @@ class PricingTest(unittest.TestCase):
                                return_value=dict(noob.FALLBACK_DEEPSEEK_RATES)), \
              mock.patch.object(noob, "codex_data", return_value={}), \
              mock.patch.object(noob, "opencode_usage", return_value={}), \
+             mock.patch.object(noob, "opencode_codex_usage", return_value={}), \
              mock.patch.object(noob, "scan_local_sessions", side_effect=scan), \
              mock.patch.object(noob.sys, "stdout", terminal):
             self.assertEqual(noob.main(["--once"]), 0)

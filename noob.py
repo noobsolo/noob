@@ -32,23 +32,24 @@ from shape_bar_demos import SHAPE, render_shape
 from noob_card import save_card, save_models_card
 from noob_reset_card import save_reset_card
 from noob_pricing import refresh_prices
-from noob_usage import PERIODS as USAGE_PERIODS, UsageLedger
+from noob_usage import CODEX_SOURCES, PERIODS as USAGE_PERIODS, UsageLedger
 
 
 # Release version, shown at the bottom-right of the dashboard. Every change
 # bumps the middle number unless the request says otherwise:
 # 0.1.0 -> 0.2.0 -> 0.3.0 ...
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 
 API_BASE = "https://api.openai.com/v1"
 # Standard, short-context text rates in USD / million tokens, checked 2026-09-23.
-# GPT-6.1 Sol added from its official model page on 2026-10-09.
+# GPT-6.1 and GPT-6.2 Sol rates are from their official model pages.
 # These are reference rates, never treated as actual invoice amounts.
 RATES = {
     "gpt-6-astra": (10.0, 1.0, 12.5, 50.0),
     "gpt-6-sol": (2.0, 0.2, 2.5, 10.0),
     "gpt-6.1-sol": (2.0, 0.1, 2.5, 10.0),
+    "gpt-6.2-sol": (2.0, 0.1, 2.5, 10.0),
     "gpt-6-luna": (0.1, 0.01, 0.125, 0.5),
     "gpt-5.6-sol": (4.0, 0.4, 5.0, 20.0),
     "gpt-5.6-terra": (2.0, 0.2, 2.5, 12.0),
@@ -56,7 +57,7 @@ RATES = {
     "gpt-5.5": (5.0, 0.5, None, 30.0),
     "gpt-5-codex": (1.25, 0.125, None, 10.0),
 }
-LONG_CONTEXT_MODELS = {"gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna",
+LONG_CONTEXT_MODELS = {"gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.2-sol", "gpt-6-luna",
                        "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"}
 LONG_RATES = {}
 TOKEN_FIELDS = ("input", "cached", "write", "output")
@@ -703,24 +704,58 @@ def peak_windows(start, end):
     return windows
 
 
-def opencode_deepseek_tokens(data):
-    """Per-model DeepSeek token rows from one OpenCode stats payload."""
+def opencode_model_tokens(data, provider_id):
+    """Normalize OpenCode stats by model, combining reasoning variants."""
     bucket = defaultdict(empty_local_row)
     for entry in data.get("models") or []:
         model = entry.get("model") or {}
-        if model.get("providerID") != "deepseek":
+        if model.get("providerID") != provider_id:
             continue
         tokens = entry.get("tokens") or {}
         cache = tokens.get("cache") or {}
         read = int(cache.get("read") or 0)
         write = int(cache.get("write") or 0)
-        row = bucket[model.get("id") or "deepseek"]
+        row = bucket[model.get("id") or provider_id]
         row["input"] += int(tokens.get("input") or 0) + read + write
         row["cached"] += read
         row["write"] += write
         row["output"] += int(tokens.get("output") or 0) + int(tokens.get("reasoning") or 0)
         row["calls"] += int(entry.get("steps") or 0)
     return dict(bucket)
+
+
+def opencode_deepseek_tokens(data):
+    return opencode_model_tokens(data, "deepseek")
+
+
+def opencode_codex_tokens(data):
+    rows = opencode_model_tokens(data, "openai")
+    rows.pop("codex-auto-review", None)
+    return {model: row for model, row in rows.items() if any(row[f] for f in TOKEN_FIELDS)}
+
+
+def opencode_codex_usage(now, timeout=20):
+    """Live OpenAI totals when the local ledger is disabled or unavailable."""
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    starts = {"day": day, "week": day - dt.timedelta(days=day.weekday()),
+              "month": day.replace(day=1), "all": None}
+    end = int(now.timestamp() * 1000)
+    cache = {}
+    periods = {}
+    for period, boundary in starts.items():
+        start = int(boundary.timestamp() * 1000) if boundary else 0
+        if start not in cache:
+            rows = opencode_codex_tokens(opencode_stats(start, end, timeout)) if start < end else {}
+            for model, row in rows.items():
+                # Range totals cannot determine which individual requests were long-context.
+                cost = estimate(model, row)
+                if cost is None:
+                    row["unpriced"] = row["input"] + row["output"]
+                else:
+                    row["estimate"] = cost
+            cache[start] = rows
+        periods[period] = cache[start]
+    return periods
 
 
 def opencode_usage(now=None, timeout=20, rates=None, usd_cny=FALLBACK_USD_CNY, versions=None):
@@ -945,19 +980,28 @@ def deepseek_peak(moment):
             and any(low <= utc.hour < high for low, high in DEEPSEEK_PEAK_UTC))
 
 
-def merge_deepseek_usage(*sources):
-    """Sum multiple {period: {model: row}} DeepSeek results into one."""
+def merge_usage_rows(*sources):
+    """Sum multiple {period: {model: row}} results into one."""
     periods = ("day", "week", "month", "all")
     merged = {period: {} for period in periods}
     for source in sources:
         for period in periods:
             for model, row in (source.get(period) or {}).items():
                 target = merged[period].setdefault(model, dict(empty_local_row()))
-                target.setdefault("estimate_cny", 0.0)
                 for field in ("input", "cached", "write", "output", "calls",
-                              "estimate", "estimate_cny", "unpriced"):
+                              "estimate", "unpriced"):
                     target[field] += row.get(field, 0) or 0
+                if "estimate_cny" in row:
+                    target["estimate_cny"] = target.get("estimate_cny", 0.0) + row["estimate_cny"]
     return merged
+
+
+def codex_split_costs(cli_rows, opencode_rows):
+    """Per-period reference USD cost, by the two Codex clients."""
+    return {name: {"usd": {period: sum(row.get("estimate", 0.0)
+                                      for row in (rows.get(period) or {}).values())
+                           for period, _ in PERIODS}}
+            for name, rows in (("codex", cli_rows), ("opencode", opencode_rows))}
 
 
 def deepseek_split_costs(opencode_rows, pi_rows):
@@ -972,21 +1016,25 @@ def deepseek_split_costs(opencode_rows, pi_rows):
     return result
 
 
-def deepseek_cost_lines(platform, split, width, color, indent=4):
+def platform_cost_lines(platform, split, sources, width, color, indent=4):
     """Render total and source costs with shared period widths and wrapping."""
-    rows = [("cost", cost_pairs(platform["totals"], platform["currency"]))]
+    currency = platform["currency"]
+    rows = [("cost", cost_pairs(platform["totals"], currency))]
     if split:
-        for name in ("opencode", "pi"):
-            cny = ((split.get(name) or {}).get("cny")) or {}
-            rows.append((name, [(label.lower(), "¥%.2f" % (cny.get(period) or 0.0))
-                                for period, label in PERIODS]))
+        for name, label in sources:
+            amounts = (split.get(name) or {}).get(currency) or {}
+            format_cost = "¥%.2f" if currency == "cny" else "$%.2f"
+            rows.append((label, [(caption.lower(), format_cost % amounts.get(period, 0.0))
+                                 for period, caption in PERIODS]))
     column_widths = [max(len("%s %s" % pairs[i]) for _, pairs in rows)
                      for i in range(len(PERIODS))]
+    key_width = max(9, max(len(name) + 2 for name, _ in rows))
     lines = []
     for name, pairs in rows:
         dim = "2" if name != "cost" else None
         lines.extend(summary_lines(name, pairs, width, color, indent=indent,
-                                   key_style=dim, value_style=dim, uppercase=name == "cost",
+                                   key_width=key_width, key_style=dim, value_style=dim,
+                                   uppercase=name == "cost",
                                    accent="today" if name == "cost" else None,
                                    column_widths=column_widths))
     return lines
@@ -1524,8 +1572,8 @@ def platform_summary_lines(usage, quota, deepseek, deepseek_hint, subscription_i
     codex = by_name.get("codex")
     cost_group = []
     if codex is not None:
-        cost_group.extend(summary_lines("cost", cost_pairs(codex["totals"], codex["currency"]),
-                                        inner, color, indent=indent, accent="today"))
+        cost_group.extend(platform_cost_lines(codex, usage.get("codex_split"), CODEX_SOURCES,
+                                              inner, color, indent=indent))
         cost_group.append(paint("%s%d session files" % (" " * indent, usage.get("files", 0)),
                                 "2", color))
     renewal = subscription_text(subscription_info, max(4, inner - indent - 9))
@@ -1543,7 +1591,8 @@ def platform_summary_lines(usage, quota, deepseek, deepseek_hint, subscription_i
     deepseek_block = by_name.get("deepseek")
     deep = group_lines([
         deepseek_balance_lines(deepseek, deepseek_hint, inner, color, usd_cny, indent=indent),
-        deepseek_cost_lines(deepseek_block, usage.get("deepseek_split"), inner, color,
+        platform_cost_lines(deepseek_block, usage.get("deepseek_split"),
+                            (("opencode", "opencode"), ("pi", "pi")), inner, color,
                             indent=indent) if deepseek_block is not None else [],
     ])
     if deep:
@@ -2063,6 +2112,76 @@ def capture_opencode_usage(state, now, context, backfill, baseline):
     return events, warnings
 
 
+def capture_opencode_codex_usage(state, now, context):
+    """Backfill OpenAI separately: the existing OpenCode ledger only has DeepSeek."""
+    if not shutil.which("opencode"):
+        return [], []
+    opencode = state["opencode"]
+    booked_days = opencode["codex_days"]
+    try:
+        through = dt.date.fromisoformat(opencode.get("codex_through"))
+    except (TypeError, ValueError):
+        through = None
+    today = now.date()
+    events = []
+    try:
+        if through is None:
+            activity = opencode_stats(0, int(now.timestamp() * 1000)).get("activity") or []
+            targets = {today}
+            for item in activity:
+                try:
+                    day = dt.date.fromisoformat(item.get("date"))
+                except (TypeError, ValueError):
+                    continue
+                # Also cover adjacent local dates if the server buckets activity in UTC.
+                targets.update(day + dt.timedelta(days=n) for n in (-1, 0, 1))
+            targets = sorted(day for day in targets if day <= today)
+        else:
+            targets = (through + dt.timedelta(days=n)
+                       for n in range((today - through).days + 1))
+        for day in targets:
+            start = dt.datetime.combine(day, dt.time.min).astimezone()
+            end = min(dt.datetime.combine(day + dt.timedelta(days=1),
+                                          dt.time.min).astimezone(), now)
+            if start >= end:
+                continue
+            data = opencode_stats(int(start.timestamp() * 1000), int(end.timestamp() * 1000))
+            day_key = day.isoformat()
+            for model, row in opencode_codex_tokens(data).items():
+                booked = booked_days.setdefault(day_key, {})
+                old = booked.get(model) or {}
+                fields = (*TOKEN_FIELDS, "calls")
+                delta = {field: max(0, row[field] - int(old.get(field) or 0))
+                         for field in fields}
+                if not any(delta[field] for field in TOKEN_FIELDS):
+                    continue
+                booked[model] = {field: max(row[field], int(old.get(field) or 0))
+                                 for field in fields}
+                calls = delta.pop("calls")
+                # Aggregate stats don't expose per-request context lengths; use Standard short rates.
+                rates = effective_codex_rates(model)
+                cost = cost_from_codex_rates(delta, rates)
+                if rates is not None:
+                    rates["source"] = context["price_source"]
+                events.append({
+                    "at": now.isoformat(), "day": day_key, "platform": "Codex",
+                    "source": "opencode", "model": model, "display": model,
+                    "kind": "short", "tokens": delta, "cost": cost if cost is not None else 0.0,
+                    "currency": "USD", "unpriced": delta["input"] + delta["output"]
+                    if cost is None else 0, "calls": calls, "rates": rates,
+                    "backfill": through is None,
+                })
+            # Revisit the most recently queried day on the next refresh (it may still be active).
+            opencode["codex_through"] = day_key
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        warnings = ["OpenCode Codex usage query failed: %s" % exc]
+        if through is None:
+            # Retry discovery and reuse the watermarks for any successful partial backfill.
+            opencode["codex_through"] = None
+        return events, warnings
+    return events, []
+
+
 def usage_context():
     """Load prices and model labels once for capture and rendering."""
     warnings = []
@@ -2115,7 +2234,7 @@ def capture_usage(ledger, context, now=None):
         with ledger.transaction() as (state, events):
             empty_watermarks = not any(state[section][key] for section, key in
                                        (("codex", "sessions"), ("pi", "files"),
-                                        ("opencode", "days")))
+                                        ("opencode", "days"), ("opencode", "codex_days")))
             baseline = bool(state.get("baseline_only")) or (not backfill and empty_watermarks)
             codex_events, codex_warnings, files = capture_codex_usage(
                 state, now, context, backfill, baseline)
@@ -2129,6 +2248,10 @@ def capture_usage(ledger, context, now=None):
                 state, now, context, backfill, baseline)
             events.extend(opencode_events)
             warnings.extend(opencode_warnings)
+            opencode_codex_events, opencode_codex_warnings = capture_opencode_codex_usage(
+                state, now, context)
+            events.extend(opencode_codex_events)
+            warnings.extend(opencode_codex_warnings)
             state["baseline_only"] = False
     except OSError as exc:
         warnings.append("Usage ledger unavailable: %s" % exc)
@@ -2147,16 +2270,22 @@ def ledger_usage_sources(ledger, now, files=0):
     return sources
 
 
-def live_usage_sources(context, warnings):
+def live_usage_sources(context, warnings, report_end):
     sources = []
+    cli_rows = {}
+    opencode_codex_rows = {}
     try:
-        sources.append(("Codex", scan_local_sessions()))
+        cli_rows = scan_local_sessions()
     except OSError as exc:
         warnings.append("Could not read local session logs: %s" % exc)
     opencode_rows = None
     pi_rows = None
     deepseek_sources = []
     if shutil.which("opencode"):
+        try:
+            opencode_codex_rows = opencode_codex_usage(report_end)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+            warnings.append("OpenCode Codex usage query failed: %s" % exc)
         try:
             opencode_rows = opencode_usage(
                 rates=context["deepseek_rates"], usd_cny=context["usd_cny"],
@@ -2170,9 +2299,13 @@ def live_usage_sources(context, warnings):
         deepseek_sources.append(pi_rows)
     except (OSError, RuntimeError, ValueError) as exc:
         warnings.append("pi usage query failed: %s" % exc)
+    if cli_rows or opencode_codex_rows:
+        codex_rows = merge_usage_rows(cli_rows, opencode_codex_rows)
+        codex_rows["files"] = cli_rows.get("files", 0)
+        sources.append(("Codex", codex_rows))
     if deepseek_sources:
-        sources.append(("DeepSeek", merge_deepseek_usage(*deepseek_sources)))
-    return sources, opencode_rows, pi_rows
+        sources.append(("DeepSeek", merge_usage_rows(*deepseek_sources)))
+    return sources, opencode_rows, pi_rows, codex_split_costs(cli_rows, opencode_codex_rows)
 
 
 def collect_usage(context, warnings, ledger=None, now=None, capture_now=None):
@@ -2194,10 +2327,17 @@ def collect_usage(context, warnings, ledger=None, now=None, capture_now=None):
             pi_rows = ledger.period_rows("DeepSeek", now, source="pi")
             usage = build_usage(sources)
             usage["deepseek_split"] = deepseek_split_costs(opencode_rows, pi_rows)
+            usage["codex_split"] = codex_split_costs(
+                ledger.period_rows("Codex", now, source="codex"),
+                ledger.period_rows("Codex", now, source="opencode"))
             return usage
-    sources, opencode_rows, pi_rows = live_usage_sources(context, warnings)
+    report_end = now
+    if capture_now is not None and capture_now.date() > now.date():
+        report_end = dt.datetime.combine(now.date(), dt.time.max, tzinfo=now.tzinfo)
+    sources, opencode_rows, pi_rows, codex_split = live_usage_sources(context, warnings, report_end)
     usage = build_usage(sources)
     usage["deepseek_split"] = deepseek_split_costs(opencode_rows, pi_rows)
+    usage["codex_split"] = codex_split
     return usage
 
 

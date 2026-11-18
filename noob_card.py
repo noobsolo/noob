@@ -10,6 +10,8 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from noob_usage import CODEX_SOURCES
+
 
 SVG_NS = "http://www.w3.org/2000/svg"
 ET.register_namespace("", SVG_NS)
@@ -146,20 +148,28 @@ def card_svg(usage, now=None, rng=None, quotas=None, deepseek=None):
                      "cost_cny": 0.0} for period in PERIODS}}
         main = ordered[:2] + [other]
 
-    split = usage.get("deepseek_split") or {}
     rows = []  # (label, is_sub, [today, week, month])
     for platform in main:
         rows.append((platform["name"].upper()[:14], False,
                      [_platform_money(platform, period) for period in PERIODS[:3]]))
-        if platform["name"].lower() == "deepseek":
+        name = platform["name"].lower()
+        if name == "codex" and usage.get("codex_split"):
+            for source, label in CODEX_SOURCES:
+                usd = usage["codex_split"][source]["usd"]
+                rows.append((label, True, [_money(usd[period]) for period in PERIODS[:3]]))
+        if name == "deepseek":
+            split = usage.get("deepseek_split") or {}
             for source in ("opencode", "pi"):
                 cny = ((split.get(source) or {}).get("cny")) or {}
                 rows.append((source, True,
                              ["¥%.2f" % (cny.get(period) or 0.0) for period in PERIODS[:3]]))
 
     rows_node = _node(root, "platform-rows")
+    # Compress the row pitch only when needed to keep the footer on the 1350px card.
+    row_intervals = max(0, len(rows) - 1)
+    pitch = min(44, 172 // max(1, row_intervals))
     for index, (label, is_sub, values) in enumerate(rows):
-        y = 988 + index * 44
+        y = 988 + index * pitch
         fill = "#5b6670" if is_sub else "#79838e"
         size = 19 if is_sub else 22
         weight = 600 if is_sub else 700
@@ -178,9 +188,9 @@ def card_svg(usage, now=None, rng=None, quotas=None, deepseek=None):
             "x": "88", "y": "988", "class": "mono dim", "font-size": "22"})
         empty.text = "NO LOCAL USAGE"
 
-    # The footer hugs the cost table: shift it one row height per extra/missing row.
+    # Preserve the gap after the last row (the template leaves space for three).
     _node(root, "card-footer").set(
-        "transform", "translate(0,%d)" % ((max(1, len(rows)) - 3) * 44))
+        "transform", "translate(0,%d)" % (row_intervals * pitch - 2 * 44))
 
     _node(root, "deepseek-balance").text = deepseek or "—"
     quotas = quotas or {}
